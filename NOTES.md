@@ -1,0 +1,326 @@
+# Local Economics RAG Assistant
+
+An economics research assistant specialized in **development economics** (worldwide) and
+**economic opportunity in the US**. Online (with `GROQ_API_KEY`), a tool-using analyst
+(`analyst.py`) answers from the sources it chooses between: World Bank World Development
+Indicators (~1,500 indicators x 217 economies), any FRED series, Opportunity Atlas county
+data (every US county), and a personal library of econ PDFs (mostly Opportunity Insights
+papers) — Python computes every number, and `verify.py` checks the answer against
+the tool results. Offline (or if Groq fails), the original local pipeline answers with phi3.5.
+No paid API: FRED and Groq's free tier are the only network calls.
+
+**Direction (Oct 2026):** refocusing on development economics for a general audience —
+see `ROADMAP.md` for the phased plan; start with its Phase 0 (cheap evaluation).
+
+## Hardware constraint (read this first)
+
+MacBook Air M2, **8GB RAM**. This is the binding constraint on every design decision below.
+Running two memory/GPU-heavy processes at once is what causes the failures documented in
+"Known gotchas." When changing this pipeline, always ask: does this risk two things being
+resident in memory/GPU at the same time?
+
+## Architecture
+
+```
+docs/*.pdf --ingest.py--> data/chunks.json + data/embeddings.npy   (run once per new PDF)
+
+question --route_query()--> live_data | documents | both           (Laya, CPU)
+              |                              |
+         fred.py (FRED API)         cosine similarity (top 15)
+              |                     --> Laya rerank (CPU) --> top 5
+              |                              |
+              +------------> ask_llm() --> Ollama (phi3.5) --> answer
+```
+That is the **offline / fallback** path. With a Groq key, each question goes first to:
+```
+question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools:
+               search_papers      (same hybrid retrieval + Laya rerank as above)
+               county_profile / rank_counties / correlate_counties   (atlas.py)
+               search_data / get_data   source=worldbank (worldbank.py, default) or fred (fred.py)
+          --> verify.py: numbers + citations must trace to tool results
+              (one revision round if not; leftovers flagged "⚠ Not verified")
+          --> answer.  Any GroqUnavailable (offline, bad key, retired model, long
+              rate limit) --> the local pipeline above for that question.
+```
+
+- **Retrieval**: hybrid — `sentence-transformers` (`all-MiniLM-L6-v2`) cosine similarity
+  over a flat NumPy array (no vector DB, deliberately) fused by reciprocal rank with BM25
+  keyword scores (`BM25` class in `ask.py`, built at load, no dependency). Measured on
+  `eval/retrieval_eval.py` (evidence chunk in top 15): dense 14/18, BM25 17/18 but 3/8 on
+  reworded questions, hybrid 17/18 and 5/8. BM25 matters partly because MiniLM truncates at
+  256 tokens (~1/3 of a chunk); BM25 reads the whole chunk.
+- **Reranking**: Laya (`convaiinnovations/laya`, local, ~421M params) scores each candidate
+  chunk with a `score` question (0-3 ordinal relevance) against `"Query: ... \n\nPassage: ..."`.
+  Runs via `predict_batch` (one shared forward pass, not N sequential calls).
+  Laya's ranking is *fused* with the retrieval ranking (reciprocal rank), not used alone:
+  Laya only reads a chunk's first ~470 of its tokens (~44%) and was dropping chunks BM25
+  ranked 3rd. Fact reached the prompt for 18/26 eval questions fused vs 16/26 Laya-only.
+- **Routing**: Laya answers two independent `noul` (yes/no) questions — `needs_live_data`,
+  `needs_documents` — rather than one 3-way `choice`. The 3-way version was tried first and
+  failed: `both` acts as a statistical attractor bucket in forced 3-way classification and
+  dominated almost every query. But only `needs_live_data` turned out to discriminate:
+  research questions score <=0.20, live lookups >=0.60. `needs_documents` is weak (usually
+  <0.5 even for pure research questions), so the old "both <0.5 -> default to `both`" rule
+  sent ~85% of research questions down `both`, wasting a whole extra generation on an
+  irrelevant live-data answer. `route_query` now: fetch live if live >= 0.25 or the question
+  names a FRED indicator next to a recency word (`ASKS_CURRENT_INDICATOR` — Laya underrates
+  the live half of compound questions); search documents unless live >= 0.5 and docs < 0.25.
+  Ambiguous cases still go to `both`. 23/23 on the eval set, 15/15 on held-out questions
+  (was 7/23, 7/15) — thresholds were tuned on the eval set, so watch for misroutes.
+- **Online analyst** (`analyst.py`): Groq `openai/gpt-oss-120b` with OpenAI-style tool
+  calling. Design rule: **the model chooses, Python computes** — tools return computed stats
+  (FRED max/min with dates, Atlas weighted averages/percentiles/correlations, with the
+  correlation's direction spelled out in words), never raw data for the model to summarize.
+  The system prompt carries "economics conventions" (employment rate = EMRATIO, not 100 −
+  unemployment; CPI via `pc1`; don't present racial composition as a cause). Racial shares
+  are excluded from `correlate_counties` for the same reason. Keeps the last 2 Q/A pairs for
+  follow-ups; local fallback answers are added to that memory too.
+- **Local generation** (offline fallback, and the only path without a key): Ollama `phi3.5`
+  (see "Model choice" below). `both`-route questions
+  get **two separate single-purpose generations** (one FRED-only, one docs-only), not one
+  combined generation — see "Prompting gotchas." Answers stream to the terminal.
+- **Context packing**: reranked chunks are packed best-first into what's left of `num_ctx`
+  after the instructions, question, and `ANSWER_RESERVE` (768), measured exactly with
+  phi3.5's own HF tokenizer (`microsoft/Phi-3.5-mini-instruct`, tokenizer only — verified
+  token-for-token against Ollama). Usually ~4 chunks fit; the last is cut at a token
+  boundary. See gotcha #5.
+- **Not built**: Jev (TypeSafe) A/B comparison — the user has an API key in `.env` but chose
+  not to spend the $5 credit on it. Would slot in as an alternate reranker in `ask.py`,
+  parallel to `rerank_with_laya`.
+
+## Files
+
+- `ingest.py` — rebuild the index. Run whenever a PDF is added to `docs/`. Always does a
+  **full rebuild** (re-embeds every PDF), not incremental — fine at this corpus size (~11
+  papers, ~864 chunks, ~40s: PDF extraction is the cost, run 4 PDFs in parallel processes),
+  not a decision that scales to hundreds of docs.
+- `ask.py` — interactive query loop (`.venv/bin/python ask.py`). Reads questions with
+  `input()`; also works with piped stdin (exits cleanly on EOF), which is how it's benchmarked.
+- `fred.py` — FRED client: 4 series fetched concurrently, retried on 429/5xx, cached 15 min
+  in-process (local path). `search_series` / `series_stats` serve any series to the analyst
+  (stats + text sparkline). Also `python fred.py` to sanity-check the API key/network.
+- `analyst.py` — the online tool-using agent (tool schemas, system prompt, loop).
+- `atlas.py` — Opportunity Atlas county data: profile, rank, correlate. `python atlas.py Cook IL`.
+- `worldbank.py` — World Bank WDI: keyword search over the indicator catalog (BM25 + `CORE`
+  boost + everyday-word `SYNONYMS`), country-name resolution (aliases, fuzzy), per-country
+  stats or all-economy rankings, and convention `NOTES` attached to results (survey years
+  for poverty, PPP vs market rates, current vs constant prices). Catalog cached in
+  `data/worldbank/` (delete to refresh). `python worldbank.py "extreme poverty" Ethiopia`.
+- `bm25.py` — keyword scoring shared by paper retrieval and the WDI catalog search.
+- **IMF not integrated (Oct 2026):** its DataMapper API returns every country regardless of
+  the requested one (~120KB/call) and answers `curl` but rejects Python `requests` (403/HTML);
+  not worked around (would mean disguising the client). Forecasts are the gap this leaves.
+- `verify.py` — fact-checks analyst answers (numbers + citations vs tool results).
+- `groq_client.py` — Groq API call + `GroqUnavailable`; `GROQ_MODEL` lives here.
+- `tests/test_tools.py` — tool + analyst-loop tests (fake Groq, zero tokens, ~3s). Run after
+  every change: `.venv/bin/python tests/test_tools.py`.
+- `eval/benchmark.py` — 31-question benchmark of the analyst (dev data, US tools, traps,
+  literature), truths computed live from World Bank/FRED/Atlas, scored by code. `run` is
+  resumable and takes ~1h on Groq's free tier (run in background); `score`; `questions` /
+  `score-external <name>` for pasted answers from general chatbots in `eval/external/` (kept out of git).
+- `data/atlas/` — downloaded once (public): `county_outcomes_simple.csv` and
+  `cty_covariates.csv` (opportunityinsights.org/data, codebooks = "Table 2" and "Table 10"),
+  `national_county.txt` (census.gov FIPS -> county name; the Atlas files have codes only).
+- `.env` — `FRED_API_KEY`, `GROQ_API_KEY` (optional; without it everything runs locally),
+  `TYPESAFE_API_KEY` (unused so far). Gitignored.
+- `data/chunks.json`, `data/embeddings.npy` — generated, don't hand-edit, regenerate via `ingest.py`.
+- `eval/questions.json` — 23 questions with expected facts, each checked against the paper
+  text (19 docs incl. one deliberately unanswerable, 3 live, 1 both), plus an `evidence`
+  phrase per doc question for `eval/retrieval_eval.py` (retrieval-only, seconds per run,
+  `--rerank` adds Laya: ~3 min). Caveat: questions were written after reading the abstracts,
+  so they share wording with the source — this flatters keyword search; check reworded
+  questions before trusting a retrieval change. `eval/run_eval.py
+  phi3.5@4096 phi4-mini@8192 ...` compares generation models on identical retrieved context
+  and scores routing; answers land in `eval/results/` — read them, the scoring is literal.
+  (Before the extraction fix, `covid_wage_split` and `microforecast` failed for every model
+  because the fact never reached the context.)
+
+## Environment
+
+- Shell is **fish**, not bash — use `.venv/bin/python`/`.venv/bin/pip` directly rather than
+  `source .venv/bin/activate` (that's the bash script; fish needs `activate.fish`).
+- Python: `/usr/local/bin/python3.13` (universal arm64/x86_64 binary). The machine also has
+  Python 3.10/3.12 installs and a separate global (non-venv) 3.13 site-packages with unrelated
+  project junk (streamlit, etc.) — the venv here is intentionally isolated from that.
+- **Rosetta gotcha hit once already**: `pip install` under Rosetta translation grabs x86_64
+  wheels even on an arm64 Python, and MLX/native ML libs then fail with "incompatible
+  architecture." Fix: confirm `arch` prints `arm64`, then
+  `pip install --force-reinstall --no-cache-dir <pkg>`.
+- Laya's real dependency is **PyTorch (MPS backend)**, not MLX, despite the project's original
+  framing — `mlx`/`mlx-lm` are installed globally on this machine but the venv here doesn't
+  use them, deliberately, to keep dependencies minimal.
+
+## Known gotchas (hit during development — don't re-discover these)
+
+1. **Laya must load with `device="cpu"`**, not the MPS/GPU default. Running Laya on GPU while
+   Ollama is also using the GPU for generation caused a real crash
+   (`kIOGPUCommandBufferCallbackErrorOutOfMemory`) that **silently produced NaN scores**
+   instead of raising — `rerank_with_laya` now detects NaN and falls back to cosine order
+   with a printed warning, but the real fix is avoiding the GPU contention in the first place.
+2. **Always pass `num_ctx` explicitly** in Ollama's `options`. Without it, Ollama defaults to
+   the model's full native context window (65,536 for phi3.5) and the resulting KV-cache
+   allocation thrashes an 8GB machine badly enough that requests silently hang for minutes
+   with no error. Current setting: `num_ctx: 4096` (plenty for ~5 chunks + question).
+3. **CPI from FRED is a raw index level, not an inflation rate.** Must request
+   `units=pc1` (year-over-year % change) or you'll hand the LLM a meaningless number like
+   `334.1` that it may confidently mislabel as "the inflation rate."
+4. **PDF extraction: don't use pdfplumber's table detection or default spacing.**
+   History: `pypdf` flattened tables into runs of numbers (LLM misattributed credit-score
+   figures across race groups); the first fix, `find_tables` with the "text" strategy plus a
+   words-per-cell filter, turned out to treat most *prose* as tables — 584 of 654 detected
+   "tables" were <20% numeric — chopping words into cells ("V-sh | aped") and making whole
+   abstracts unreadable (2 of 18 eval facts weren't findable anywhere). Separately, the
+   default `x_tolerance=3` glued words together in tightly set papers (6-8% of "words" in the
+   Opportunity Insights papers were run-ons like "Weshowthatintergenerational...").
+   Now: `x_tolerance=1.5`, no table detection; every page is laid out line by line from word
+   positions with " | " only at gaps wider than ~1 character height (`page_lines`). Prose
+   comes out clean, tables come out as "Label | 45.4 | 45.1 | -0.7" rows; chunks split on
+   line boundaries so rows survive. Glued words now <0.2% everywhere; all 18 facts readable.
+   Rotated (non-upright) chars are dropped (figure axis labels extracted reversed).
+   Assumes single-column layouts — true of every paper here; a two-column paper would get
+   its columns joined with " | ".
+
+5. **The prompt must fit in `num_ctx` INCLUDING room for the answer.** Ollama silently cuts
+   the *start* of an over-long prompt (log: `truncating input prompt`) — i.e. the
+   instructions and the top-ranked chunk go first — and if the prompt fills the window there's
+   no room left to answer, so it "context shifts" mid-answer and rambles (one test: 2,084
+   tokens, 84s). Five 500-word chunks average ~4,000 phi3.5 tokens and table-heavy ones run far
+   higher (one real prompt was 9,512 tokens, cut to 4,095). Fixed by `build_doc_context`
+   (exact token budget) + `num_predict` capped at the remaining room. Don't raise `num_ctx`
+   to fit more chunks without reading gotcha #2: phi3.5's KV cache is ~384KB/token
+   (1.5GB at 4096). If more context is ever needed, `OLLAMA_KV_CACHE_TYPE=q8_0` on the Ollama
+   server halves that (flash attention is already on) — untested here.
+6. **phi3.5 + Laya co-resident = Laya in swap.** phi3.5 holds ~3.6GB of unswappable Metal
+   memory; the OS pages Laya's 1.7GB of fp32 weights out, so the next routing call took 7-12s
+   (vs 0.5s) and reranking 26-33s (vs 8s). Fix: `warm_up()` runs one tiny Laya pass right
+   after each answer, paging it back in while the user types. Unloading phi3.5 after every
+   answer instead was measured and was *slower* overall: phi3.5 generated 2-4x slower after
+   each cold reload.
+
+7. **Groq free tier: 8,000 tokens/minute, 1,000 requests/day — for every model** (checked
+   via `x-ratelimit-*` headers, Oct 2026) — **plus 200,000 tokens per rolling 24h for
+   gpt-oss-120b, which is NOT in the headers** (only in the 429 message; found when a day of
+   testing exhausted it). At ~10-15K tokens per analyst question that's ~15 questions/day. Every tool round re-sends the whole conversation,
+   so questions take ~30-120s of rate-limit waits; a single request over 8K fails outright
+   (HTTP 413). Hence: terse tool schemas (~1.6K tokens), compact Atlas output, ~1.8K tokens
+   of passages per paper search (`AGENT_PAPERS_CTX`) with already-shown chunks skipped,
+   `_fit()` trimming old tool results under `REQUEST_TOKEN_LIMIT`, and waits of up to 60s on
+   429 (`MAX_RATE_LIMIT_WAIT`) instead of falling back. Groq's paid Dev tier lifts this.
+8. **gpt-oss-120b fabricates despite instructions**: in testing it cited real-sounding papers
+   no search returned (and cited research without searching at all), computed "employment
+   rate" as 100 − unemployment, read r = −0.44 as a positive relationship, and read a
+   recession's peak off sampled points. Fixed in code, not prompt: `verify.py`, worded
+   correlation directions, exact max/min per requested range. **verify.py's first version was
+   itself broken**: accepting any difference/ratio of any two tool numbers let through 100% of
+   random 1-decimal numbers (a county profile has ~150 numbers -> ~90K pairs). Derived numbers
+   now count only if both operands appear in the answer (6% false-pass; regression test). It also "explained" Cook
+   County's gap with characteristics that were average (33.8% vs 33.4% single parents), barely
+   tracked mobility (short commutes, r = 0.12), or were racial composition read as
+   "segregation". Now `county_profile` labels each characteristic vs national (`NOTABLE_SD`
+   = 0.5 child-weighted SD), gives its r with mobility, computes
+   `characteristics_consistent_with_gap` (notable AND |r| >= `RELEVANT_R` 0.3 AND right
+   sign), and omits racial shares unless `demographics=true`; the prompt restricts local
+   explanations to that list and bans causal wording. Still unchecked: qualitative claims
+   and wording — read answers critically.
+9. **gpt-oss ignored `tool_choice: "none"`** (called a tool anyway -> HTTP 400), so the final
+   round sends no `tools` at all. **Groq retired its Llama models** in Oct 2026 without the
+   docs page updating — list a key's models with `GET /openai/v1/models`.
+
+## Performance experiments that didn't pan out (measured — don't retry blindly)
+
+- **Sub-window embeddings** (tried twice — on the old garbled text and again on clean text
+  alongside BM25, still no gain; MiniLM truncates at 256 tokens, chunks are ~720, so retrieval
+  only "sees" each chunk's first third): embedding overlapping windows and scoring by
+  max/mean/mixed window similarity was no better than whole-chunk embedding on a Laya-judged
+  8-query eval (1.82-1.94 vs 1.90 mean relevance), with consistent regressions on some
+  queries. Same for feeding Laya the best-matching window instead of the chunk start (Laya
+  also truncates, at ~470 of its tokens ≈ 44% of a chunk).
+- **Laya on CPU in bf16** (`LAYA_CPU_AMP=bf16`): 13x slower (94s vs 7s per rerank).
+- **Laya int8 dynamic quantization**: 2.6x slower on this CPU (qnnpack) AND changed rankings
+  (top-5 overlap 2-4/5, routing flipped on 2/10). Rejected.
+- **Laya `predict_batch(batch_size=3 or 5)`** to cut peak memory: identical scores but 2-3x
+  slower under memory pressure. One batch of 15 stays.
+- **torch threads 4 vs 8**: 8 (default) slightly faster.
+- **Filtering reference-list chunks**: 27 of 755 chunks, only 3% of retrieval candidates —
+  not worth the risk of a classifier deleting real content.
+
+## Prompting gotchas
+
+1. **Small instruction-tuned models reflexively refuse "current data" questions** ("I don't
+   have access to real-time data") even when the live figure is right there in the prompt —
+   a trained disclaimer pattern-matching on phrasing, not an actual check of the context. Had
+   to add an explicit, forceful override in `PROMPT_TEMPLATE` telling the model the FRED
+   section was just fetched via API and its training cutoff is irrelevant to it.
+2. **A single generation asked to ground itself in both live numbers AND document synthesis
+   at once was unreliable** — it would drop the FRED figure entirely, or fabricate a
+   plausible-sounding but fake citation (a specific table number, a specific paper title that
+   doesn't exist in the actual retrieved chunks) to paper over the gap. This wasn't fixable
+   with more prompt engineering — the fix was architectural: `both`-route questions get two
+   separate, single-purpose generations (`ask_llm(question, fred_context)` and
+   `ask_llm(question, doc_context)` independently), each a pattern that's reliable on its own.
+3. Low temperature (`0.2`) is set deliberately — small models hedge or invent more at higher
+   temperatures; this pipeline wants literal grounding over creativity.
+
+## Model choice
+
+- **Generation**: `phi3.5` (2.2GB). Started with `qwen2.5:latest` (default tag = 7B, 4.7GB) —
+  caused severe swap-thrashing (Ollama reported ~6.9GB resident for that one model alone on
+  an 8GB machine). Dropped to `qwen2.5:0.5b` for speed, but it was too weak: oscillated
+  between confidently inventing wrong numbers and producing content-free hedges even when
+  correct context was available. `phi3.5` (Microsoft's small-but-reasons-well family) fixed
+  both failure modes. `qwen2.5:latest` and `qwen2.5:0.5b` are still pulled locally but unused.
+- **phi4-mini evaluated (Oct 2026), not adopted**: it has grouped-query attention, so it
+  uses 3.1GB at num_ctx 4096 / 3.6GB at 8192 (vs phi3.5's 3.8GB at 4096). Eval: phi3.5@4096
+  13/23, phi4-mini@4096 15/23, phi4-mini@8192 14/23 — within noise for 23 questions. Both
+  invent wrong numbers sometimes and both sometimes claim "the context doesn't contain" a
+  figure that is in it. phi4-mini was slower on doc questions (31s vs 24s — longer answers;
+  at 8192 the longer prompt costs the time instead) but faster on live ones. More context
+  (all 5 chunks at 8192) did not improve accuracy. Switch with `OLLAMA_MODEL` in `ask.py`
+  (`MODELS` holds the verified tokenizer + num_ctx for each). **Caveat:** this comparison
+  ran on the old extraction/retrieval and was not repeated after the fixes below — with
+  cleaner, better-ranked chunks, phi4-mini@8192 fitting all 5 may now matter more (on the
+  retrieval eval, packing into phi3.5's 4096 budget drops some top-5 facts). Worth re-running.
+- **Reranker/router**: Laya, always — see architecture above.
+
+## Where quality stands (Oct 2026)
+
+Measured on `eval/` (small sets — treat 1-2 question differences as noise):
+
+| Stage | Before fixes | Now |
+|---|---|---|
+| Router correct (eval set / held-out) | 7/23, 7/15 | 23/23, 15/15 |
+| Eval facts readable in extracted text | 16/18 | 18/18 |
+| Fact in top-15 candidates (original / reworded questions) | 15/18, 5/8 | 17/18, 5/8 |
+| Fact in top-5 after reranking | 13/18 | 14/18 |
+| phi3.5 answers correct (first 21 eval questions; run cut short) | 12/21 | 15/21 |
+| Prompts silently truncated by Ollama | most doc prompts | none |
+
+Remaining weaknesses, roughly in order of size:
+1. **The ~4B generator** still states wrong numbers or says "the context doesn't contain" a
+   figure that's present, in roughly a quarter to a third of doc answers — even when the
+   right chunk is in the prompt. Bounded by 8GB RAM; no prompt fix found.
+2. **Reworded questions retrieve poorly** (5/8 in top 15): MiniLM only reads 256 tokens per
+   chunk and paraphrase is the dense model's job. Next candidate: `bge-small-en-v1.5`
+   (same size, 512 tokens, ~130MB download — user approval needed, not yet tested).
+3. **Prompt budget**: at num_ctx 4096 only ~3-4 chunks fit, so some reranked-in facts are
+   cut. phi4-mini@8192 fits all 5 in less memory (see Model choice) — re-test.
+
+## Running it
+
+```bash
+# one-time / after adding a PDF to docs/
+cd "/Users/piyushjain/Desktop/Projects/Fun/AI"; .venv/bin/python ingest.py
+
+# ask questions (interactive)
+cd "/Users/piyushjain/Desktop/Projects/Fun/AI"; .venv/bin/python ask.py
+
+# compare generation models on the eval set (~45 min for 3 configs)
+cd "/Users/piyushjain/Desktop/Projects/Fun/AI"; .venv/bin/python eval/run_eval.py phi3.5@4096 phi4-mini@8192
+
+# sanity-check FRED connectivity/API key alone
+cd "/Users/piyushjain/Desktop/Projects/Fun/AI"; .venv/bin/python fred.py
+```
+
+If Ollama ever seems to hang with no error for a long time, check `ollama ps` — if it shows
+an unexpectedly large context size or the model's been "loaded" for a while with no CPU
+activity, `ollama stop <model>` and retry (see gotcha #2 above for the usual cause).

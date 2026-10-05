@@ -1,0 +1,344 @@
+[
+  {
+    "id": "credit_race_delinq",
+    "route": "documents",
+    "laya_route": "documents",
+    "answers": {
+      "documents": "By age 30, 73% of Black individuals experience at least one account being more than 90 days late according to the FRED API data provided. In comparison, only 50% of Hispanic individuals have a similar delinquency status on their credit reports by this same measure and benchmarked against White individuals who stand as reference with an implied lower percentage due to lack of specific comparative figures for them in relation to Whites within the context given."
+    },
+    "missing": [
+      "36"
+    ],
+    "fabricated": [],
+    "seconds": 38.90451097488403,
+    "truncated": false,
+    "chunks_in_context": 5,
+    "passed": false
+  },
+  {
+    "id": "credit_class_delinq",
+    "route": "documents",
+    "laya_route": "both",
+    "answers": {
+      "documents": "62% of individuals from bottom quintile of parental income have a 90+ day late payment at age 30."
+    },
+    "missing": [
+      "20"
+    ],
+    "fabricated": [],
+    "seconds": 24.453960180282593,
+    "truncated": false,
+    "chunks_in_context": 5,
+    "passed": false
+  },
+  {
+    "id": "credit_income_wealth",
+    "route": "documents",
+    "laya_route": "both",
+    "answers": {
+      "documents": "Observed income explains at most 11% of repayment gap by race, while parental income accounts for up to 33%. Wealth combined with income explains around 33% of these gaps. However, when considering stable or high-income individuals earning over $300K per year continuously from 2004\u20132008 and adjusting future incomes between 2009-2020 (which are stronger predictors), observed differences in income can explain up to approximately 32%, while wealth accounts for roughly an additional 30% of the gaps. Overall, these factors together account for around half or less than that amount when considering both stable high-income individuals' earnings and future incomes as a combined explanatory power on credit delinquencies across groups (approximately 61-66%)."
+    },
+    "missing": [
+      "10",
+      "35"
+    ],
+    "fabricated": [],
+    "seconds": 40.645049810409546,
+    "truncated": false,
+    "chunks_in_context": 5,
+    "passed": false
+  },
+  {
+    "id": "credit_hometown",
+    "route": "documents",
+    "laya_route": "documents",
+    "answers": {
+      "documents": "The provided context does not contain specific numerical values or percentages regarding the amount of variation explained by childhood exposure on differences in credit delinquency rates. Therefore, I cannot provide an exact figure from this source alone. However, it mentions that further regression analysis and control variables are used to estimate coefficients related to various factors influencing repayment outcomes (equation 11). For precise figures concerning how much of the difference is accounted for by childhood exposure specifically on delinquencies across hometowns using movers-based estimates or any other method within this context would require additional information not present in your provided text."
+    },
+    "missing": [
+      "50"
+    ],
+    "fabricated": [],
+    "seconds": 39.01301312446594,
+    "truncated": false,
+    "chunks_in_context": 5,
+    "passed": false
+  },
+  {
+    "id": "class_gap_growth",
+    "route": "documents",
+    "laya_route": "both",
+    "answers": {
+      "documents": "The gap in average household incomes for white children raised at different levels increased from $17,720 to $20,950 between these two years. Additionally, there was a growth of the \"white class gap\" which rose 10.8 percentage points during this period according to data on adult female employment rates based on parental income as measured by education level in Appendix Figure A.34a and b from migration_paper.pdf."
+    },
+    "missing": [
+      "30"
+    ],
+    "fabricated": [],
+    "seconds": 39.06080102920532,
+    "truncated": false,
+    "chunks_in_context": 5,
+    "passed": false
+  },
+  {
+    "id": "race_gap_shrink",
+    "route": "documents",
+    "laya_route": "both",
+    "answers": {
+      "documents": "The gap in average household incomes fell by $6,910 (from $20,810 to $14,910). Additionally, there was a significant reduction of nearly two-thirds or approximately 72% in this racial earnings disparity for children from low-income families. This is based on the change observed between white and Black children's income levels raised within these cohorts as mentioned earlier: \"the gapinaveragehousehold incomes for white and Black children born into low-income families fell by $6,910 (from $20,810 to $14,910)\"."
+    },
+    "missing": [
+      "30"
+    ],
+    "fabricated": [],
+    "seconds": 49.67747473716736,
+    "truncated": false,
+    "chunks_in_context": 5,
+    "passed": false
+  },
+  {
+    "id": "changing_mechanism",
+    "route": "documents",
+    "laya_route": "both",
+    "answers": {
+      "documents": "The changing opportunity paper attributes differential changes in children's outcomes across birth cohorts primarily due to varying childhood environments as proxied by parental employment rates within local communities defined by both racial composition (white versus Black) and socioeconomic status. Specifically for white children from low-income families compared with those from high-income backgrounds, there was a 30% increase in earnings gaps between the parents' income levels during this period; however, among black children's outcomes across all parent income levels reduced these race-based disparities by an equivalent percentage of 30%. The paper also suggests that social interactions play a mediating role as children are most influenced by parental employment rates within their peer group."
+    },
+    "missing": [],
+    "fabricated": [],
+    "seconds": 39.29271984100342,
+    "truncated": false,
+    "chunks_in_context": 5,
+    "passed": true
+  },
+  {
+    "id": "migration_100mi",
+    "route": "documents",
+    "laya_route": "both",
+    "answers": {
+      "documents": "Approximately 80% of young adults migrate less than 100 miles from their childhood location."
+    },
+    "missing": [],
+    "fabricated": [],
+    "seconds": 20.105247020721436,
+    "truncated": false,
+    "chunks_in_context": 5,
+    "passed": true
+  },
+  {
+    "id": "migration_500mi",
+    "route": "documents",
+    "laya_route": "both",
+    "answers": {
+      "documents": "80% of young adults migrate less than 100 miles and 90% move less than 500 miles."
+    },
+    "missing": [],
+    "fabricated": [],
+    "seconds": 21.181299924850464,
+    "truncated": false,
+    "chunks_in_context": 5,
+    "passed": true
+  },
+  {
+    "id": "migration_groups",
+    "route": "documents",
+    "laya_route": "both",
+    "answers": {
+      "documents": "Black and Hispanic individuals, as well as those from low-income families."
+    },
+    "missing": [],
+    "fabricated": [],
+    "seconds": 17.96525502204895,
+    "truncated": false,
+    "chunks_in_context": 5,
+    "passed": true
+  },
+  {
+    "id": "abs_mobility",
+    "route": "documents",
+    "laya_route": "both",
+    "answers": {
+      "documents": "According to the original text \"using this methodology, we find that rates of absolute upward income mobility in the United States have fallen sharply since 1940. Under the benchmark of copula stability, the fraction of children earning more than their parents fell from 92% in the 1940 birth cohort to 50% in the 1984 birth cohort.\" Children born in 1940 had a higher rate (92%) compared with those born in the 1980s who only saw half that percentage at 50%."
+    },
+    "missing": [],
+    "fabricated": [],
+    "seconds": 24.10921883583069,
+    "truncated": false,
+    "chunks_in_context": 5,
+    "passed": true
+  },
+  {
+    "id": "abs_mobility_middle",
+    "route": "documents",
+    "laya_route": "both",
+    "answers": {
+      "documents": "The middle class. This is indicated by stating that \"rates of absolute upward income mobility in the United States have fallen sharply since 1940\" with a specific benchmark showing how children's chances to earn more than their parents dropped significantly from those born into families earning less compared to children whose fathers earned $40,000 or above annually (92% vs. nearly all). The middle class is implied as being between these two extremes of income distribution where the drop in absolute mobility was most pronounced for them specifically."
+    },
+    "missing": [],
+    "fabricated": [],
+    "seconds": 26.38753581047058,
+    "truncated": false,
+    "chunks_in_context": 5,
+    "passed": true
+  },
+  {
+    "id": "mobility_trends",
+    "route": "documents",
+    "laya_route": "both",
+    "answers": {
+      "documents": "Based on the context provided from \"ChangingOpportunity_Paper.pdf,\" there is no explicit comparison between children's outcomes and changes for those currently entering the labor force versus those who were born in the 1970s. The available information focuses primarily on how parental employment rates correlate with children\u2019s educational attainment, SAT/ACT scores, mortality rates during early adulthood across different cohorts (specifically mentioning birth years from 1978 to 1992), and changes at age 30 or later for a cohort measured around ages 27-40 in more recent times. It discusses the impact of community-level parental employment on children's outcomes but does not directly compare current labor market entrants with those born during the 1970s.\n\nTherefore, without specific data comparing these two groups (children entering today's job market and children from the '70s), it is impossible to determine whether their chances are better or worse in terms of moving up the income distribution. The context provided does not contain sufficient information for an accurate comparison between current labor force entrants' outcomes relative to those born during the 1970s regarding upward mobility within the income hierarchy."
+    },
+    "missing": [
+      "(same|stable|not changed|unchanged|similar|constant|has not)"
+    ],
+    "fabricated": [],
+    "seconds": 28.12384605407715,
+    "truncated": false,
+    "chunks_in_context": 5,
+    "passed": false
+  },
+  {
+    "id": "covid_wage_split",
+    "route": "documents",
+    "laya_route": "both",
+    "answers": {
+      "documents": "The pandemic led to an asymmetric impact on employment across wage quartiles. Low-wage jobs experienced more significant and persistent reductions in employment compared to top-quartile wages, as evidenced by a 21% loss of bottom-quartile retail consumer spending against only +20% for the highest income bracket (Table A19). Additionally, changes in UI benefits had minimal effects on low versus high wage quartiles' unemployment rates. The decline was primarily due to reduced labor demand from decreased business revenues following lower-income households\u2019 consumption and not voluntary reductions or health concerns affecting employment supply directly."
+    },
+    "missing": [
+      "V[- ]shaped"
+    ],
+    "fabricated": [
+      "Table A19"
+    ],
+    "seconds": 22.652512073516846,
+    "truncated": false,
+    "chunks_in_context": 7,
+    "passed": false
+  },
+  {
+    "id": "microforecast",
+    "route": "documents",
+    "laya_route": "both",
+    "answers": {
+      "documents": "The Giacomini, Lee, and Sarpietro (2022) proposed a new approach to estimating random effects in panel data models that addresses challenges associated with forecasting when dealing with very limited time series dimensions. Their methodology involves shrinking the individual-specific mean towards the overall sample or \"panel\" mean using weights computed solely from within an individual's own time series, without requiring additional assumptions beyond those necessary for standard estimation methods like GLS (Generalized Least Squares). They introduced three types of feasible weights: minimax-regret optimal weights that generally perform well; estimated oracle weights which can be adapted to models with heterogeneous coefficients by modifying existing analysis techniques and using individual-specific information instead of cross-sectional data. The inverse MSFE error weights are also directly applicable for handling multivariate unobserved heterogeneity or different loss functions, making the method versatile in various econometric settings. However, extending their approach beyond these specific cases remains an area open to future research endeavors."
+    },
+    "missing": [
+      "weighted average",
+      "pool"
+    ],
+    "fabricated": [],
+    "seconds": 27.796184062957764,
+    "truncated": false,
+    "chunks_in_context": 5,
+    "passed": false
+  },
+  {
+    "id": "forecasted_te",
+    "route": "documents",
+    "laya_route": "both",
+    "answers": {
+      "documents": "The answer is that when estimating forecasted treatment effects in the absence of a control group (as discussed by Irene Botosaru et al. 2023), the emphasis for obtaining estimators and inference about policy impacts shifts towards ensuring forecast unbiasedness rather than focusing solely on forecasting accuracy, as per their findings presented under JEL classification C32, C53 with keywords such as Polynomial regressions; Forecastunbiasedness; Counterfactuals; Mis-specification."
+    },
+    "missing": [],
+    "fabricated": [],
+    "seconds": 26.06054401397705,
+    "truncated": false,
+    "chunks_in_context": 5,
+    "passed": true
+  },
+  {
+    "id": "veracierto_state",
+    "route": "documents",
+    "laya_route": "both",
+    "answers": {
+      "documents": "In Veracierto's method for computing aggregate fluctuations within an economy that has private information among its agents, individual decision rules are parametrized using spline approximations. These splines serve to describe how each agent decides on consumption and leisure across different states or values they might encounter (such as varying levels of idiosyncratic shocks). The history of these decisions is kept track of through the coefficients associated with the chosen cubic splines, which act effectively as state variables in this context. This approach allows for a detailed representation that captures both cross-sectional heterogeneity and individual decision-making processes over time without relying on traditional measures like aggregate capital or productivity levels directly influencing consumption choices across different agents' states."
+    },
+    "missing": [],
+    "fabricated": [],
+    "seconds": 32.198678731918335,
+    "truncated": false,
+    "chunks_in_context": 5,
+    "passed": true
+  },
+  {
+    "id": "sieve_lp",
+    "route": "documents",
+    "laya_route": "both",
+    "answers": {
+      "documents": "David, Giacomini, Jiao, and Wang developed a sieve estimator for causal state-dependent local projections. This is indicated by the context where it mentions \"we estimate and conduct inference on the potentially nonlinear function g (\u00b7) using a sieve h approximation.\" Additionally, they establish pointwise and uniform inference methods within this framework as detailed in their paper's online appendix titled \u201cCausal State-Dependent Local Projections.\u201d"
+    },
+    "missing": [],
+    "fabricated": [],
+    "seconds": 43.33121681213379,
+    "truncated": false,
+    "chunks_in_context": 5,
+    "passed": true
+  },
+  {
+    "id": "unanswerable_minwage",
+    "route": "documents",
+    "laya_route": "both",
+    "answers": {
+      "documents": "The provided context does not contain any information regarding findings or conclusions related to the effects of minimum wage increases on teenage employment, so there is no data available from these specific sources that addresses your question."
+    },
+    "missing": [],
+    "fabricated": [],
+    "seconds": 38.51656222343445,
+    "truncated": false,
+    "chunks_in_context": 5,
+    "passed": true
+  },
+  {
+    "id": "live_unemployment",
+    "route": "live_data",
+    "laya_route": "live_data",
+    "answers": {
+      "live": "The current unemployment rate as per the provided live economic indicators from FRED is 4.2%."
+    },
+    "missing": [],
+    "fabricated": [],
+    "seconds": 2.681774854660034,
+    "truncated": false,
+    "passed": true
+  },
+  {
+    "id": "live_inflation",
+    "route": "live_data",
+    "laya_route": "live_data",
+    "answers": {
+      "live": "The current inflation rate as per live economic indicators from FRED is 3.35302%."
+    },
+    "missing": [],
+    "fabricated": [],
+    "seconds": 1.7401888370513916,
+    "truncated": false,
+    "passed": true
+  },
+  {
+    "id": "live_fedfunds",
+    "route": "live_data",
+    "laya_route": "live_data",
+    "answers": {
+      "live": "The current federal funds rate as per the provided live economic indicators from FRED is 3.75%."
+    },
+    "missing": [],
+    "fabricated": [],
+    "seconds": 1.8148326873779297,
+    "truncated": false,
+    "passed": true
+  },
+  {
+    "id": "both_unemp_migration",
+    "route": "both",
+    "laya_route": "both",
+    "answers": {
+      "live": "The current unemployment rate as per the provided context is 4.2%. The information regarding how many young adults live within a certain distance (less than 100 miles) compared to those who moved farther away was not included in the given data, so I cannot provide an answer for that specific statistic.",
+      "documents": "The context provided does not contain specific information regarding the current unemployment rate or any figures related directly to it; thus I cannot provide an answer for that part.\n\nAs per your second question about migration patterns among young adults, according to data presented in \"migration_paper.pdf,\" 80% of individuals move less than 100 miles from where they grew up."
+    },
+    "missing": [],
+    "fabricated": [],
+    "seconds": 33.18459939956665,
+    "truncated": false,
+    "chunks_in_context": 5,
+    "passed": true
+  }
+]

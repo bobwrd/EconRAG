@@ -1,0 +1,14 @@
+# secrets and environment
+.env
+.venv/
+__pycache__/
+*.pyc
+.DS_Store
+
+# copyrighted papers; generated/downloaded data (rebuild with ingest.py; see README)
+docs/
+data/
+
+# local scratch and pasted third-party chatbot answers
+x
+eval/external/

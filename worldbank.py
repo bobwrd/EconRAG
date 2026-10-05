@@ -7,6 +7,11 @@ the Poverty & Inequality Platform's poverty and Gini series. Free, no key.
   get(indicator, countries, start, end) -> per-country stats computed here
   get(indicator, ["all"], order, n)     -> every economy's latest value, ranked
 
+Growth forecasts come from the World Bank's Global Economic Prospects (API
+source 27, one indicator, NYGDPMKTPKDZ), added to the catalog as if it were a
+WDI series. (The IMF's WEO is the usual forecast source, but its API rejects
+Python clients and DBnomics' mirror stopped at the April 2025 edition.)
+
 The indicator and country lists are fetched once into data/worldbank/ (~2 MB);
 delete that folder to refresh them. Values are fetched live and cached in
 memory for the session. `python worldbank.py "extreme poverty" Ethiopia` prints
@@ -50,12 +55,20 @@ CORE = {
     "NV.AGR.TOTL.ZS", "NV.IND.MANF.ZS", "EN.GHG.CO2.PC.CE.AR5", "AG.LND.FRST.ZS",
 }
 
+FORECAST = "NYGDPMKTPKDZ"  # GEP real GDP growth, incl. forecasts (API source 27)
+# Named for forecasts only, so plain "real GDP growth" still finds the WDI actuals first.
+FORECAST_ENTRY = {"id": FORECAST, "name": "Growth forecasts and projections, World Bank Global "
+                  "Economic Prospects", "note": "Real GDP growth at constant prices from the World Bank's "
+                  "Global Economic Prospects report (published January and June): recent actuals, an "
+                  "estimate for last year, and forecasts for this year and the next two."}
+
 # Everyday words missing from the official names ("Poverty headcount ratio at
 # $3.00 a day" never says "extreme poverty"), added to the search index.
 SYNONYMS = {
     "SI.POV.DDAY": "extreme poverty international poverty line poor people share",
     "NY.GDP.PCAP.CD": "market exchange rates current us dollars nominal income per person",
     "NY.GDP.PCAP.PP.CD": "ppp purchasing power parity income per person living standards",
+    FORECAST: "forecast projected outlook prediction expected future next year",
     "SI.POV.GINI": "inequality", "SH.DYN.MORT": "child mortality",
     "SP.DYN.TFRT.IN": "births per woman", "SH.STA.STNT.ZS": "malnutrition",
 }
@@ -124,7 +137,7 @@ class WorldBank:
     def __init__(self, directory: Path = CATALOG_DIR):
         if not (directory / "indicators.json").exists():
             build_catalog(directory)
-        self.indicators = json.loads((directory / "indicators.json").read_text())
+        self.indicators = json.loads((directory / "indicators.json").read_text()) + [FORECAST_ENTRY]
         self.by_id = {i["id"]: i for i in self.indicators}
         # name counted three times: a name match beats a passing mention in a note
         self._bm25 = BM25([f"{i['name']} {i['name']} {i['name']} {i['id']} {SYNONYMS.get(i['id'], '')} "
@@ -154,6 +167,12 @@ class WorldBank:
         raise ValueError(f"unknown country or region {name!r}")
 
     def _notes(self, indicator: str) -> list[str]:
+        if indicator == FORECAST:
+            edition = self.forecast_edition()
+            year = int(edition[:4])
+            return [f"Global Economic Prospects data dated {edition}: {year} onward are FORECASTS and "
+                    f"{year - 1} is an estimate — say so, and give the edition date. Forecasts are "
+                    "revised every January and June."]
         notes = [note for key, note in NOTES.items() if key in indicator]
         if indicator.endswith(".CD") and indicator[:-3] + ".KD" in self.by_id:
             notes.append(CURRENT_PRICE_NOTE)
@@ -162,9 +181,20 @@ class WorldBank:
     def _observations(self, indicator: str, codes: list[str], start: int, end: int) -> list[dict]:
         key = (indicator, tuple(codes), start, end)
         if key not in self._cache:
+            extra = {"source": 27} if indicator == FORECAST else {}
             self._cache[key] = _fetch_all(f"country/{';'.join(codes)}/indicator/{indicator}",
-                                          date=f"{start}:{end}")
+                                          date=f"{start}:{end}", **extra)
         return self._cache[key]
+
+    def forecast_edition(self) -> str:
+        """Date of the current Global Economic Prospects data, e.g. '2026-06-11'."""
+        if "edition" not in self._cache:
+            # any covered economy works; "WLD" isn't in this source (meta comes back empty)
+            r = _session.get(f"{API}/country/USA/indicator/{FORECAST}",
+                             params={"format": "json", "source": 27, "per_page": 1}, timeout=TIMEOUT)
+            r.raise_for_status()
+            self._cache["edition"] = r.json()[0]["lastupdated"]
+        return self._cache["edition"]
 
     # ---- tools -----------------------------------------------------------
     def search(self, query: str, n: int = 8) -> list[dict]:
@@ -186,7 +216,7 @@ class WorldBank:
         if [c.lower() for c in countries] == ["all"]:
             return {**out, **self._rank(indicator, order, n)}
         codes = list(dict.fromkeys(self.country(c) for c in countries))[:20]
-        end = end or date.today().year
+        end = end or date.today().year + (5 if indicator == FORECAST else 0)
         rows = self._observations(indicator, codes, start or 1960, end)
         series: dict[str, list[tuple[int, float]]] = {c: [] for c in codes}
         for r in rows:
@@ -222,7 +252,11 @@ class WorldBank:
         return out
 
     def _rank(self, indicator: str, order: str, n: int) -> dict:
-        rows = _fetch_all(f"country/all/indicator/{indicator}", mrnev=1)
+        if indicator == FORECAST:  # rank this year's forecast, not each economy's furthest-out year
+            rows = _fetch_all(f"country/all/indicator/{indicator}", source=27,
+                              date=self.forecast_edition()[:4])
+        else:
+            rows = _fetch_all(f"country/all/indicator/{indicator}", mrnev=1)
         latest = [(r["countryiso3code"], int(r["date"]), float(r["value"])) for r in rows
                   if r["value"] is not None and r["countryiso3code"] in self.countries
                   and not self.countries[r["countryiso3code"]]["aggregate"]]

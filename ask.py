@@ -52,6 +52,12 @@ USE_GROQ = bool(GROQ_API_KEY)
 GROQ_MAX_TOKENS = 4096  # gpt-oss's hidden reasoning counts against this too
 CANDIDATE_POOL = 15  # chunks pulled by cosine similarity, before reranking
 TOP_K = 5            # chunks kept after Laya reranks the pool
+# Reciprocal-rank-fusion constant for retrieval rank + Laya rank. At the usual
+# 60, ranks 1 and 15 score almost alike (1/61 vs 1/75), so neither ranking can
+# promote its best picks; 10 lets them. Evidence in the top 3 / top 5 after
+# reranking: original questions 11->13 / 14->16 of 18, reworded 4->5 / 5->6
+# of 12; c=5 scored the same, c=20 in between (NOTES.md "Reranking").
+RERANK_RRF_C = 10
 
 # Ollama's context window is shared by the prompt AND the answer. Five chunks
 # average ~4,000 phi3.5 tokens, so sending them all overflowed num_ctx: Ollama
@@ -200,7 +206,7 @@ def rerank_with_laya(question: str, candidates: list, agent, k=TOP_K):
     # BM25 — which reads the whole chunk — had ranked 3rd. On eval/, the fact
     # reached the prompt for 18/26 questions fused vs 16/26 with Laya alone.
     laya_ranks = _ranks(np.array([score for _, score in scored]))
-    fused = [1 / (60 + i + 1) + 1 / (60 + r) for i, r in enumerate(laya_ranks)]
+    fused = [1 / (RERANK_RRF_C + i + 1) + 1 / (RERANK_RRF_C + r) for i, r in enumerate(laya_ranks)]
     order = np.argsort(fused)[::-1][:k]
     return [scored[i] for i in order]
 

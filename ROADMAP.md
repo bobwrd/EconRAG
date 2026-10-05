@@ -68,9 +68,10 @@ retrieval code), `get_data(source, series, countries, years)` → computed stats
       search in tests.
 - [x] **Poverty & inequality**: WDI carries PIP's series. Current line verified from the API:
       **$3.00/day, 2021 PPP** (`SI.POV.DDAY`); results carry a survey-year caveat.
-- [ ] **IMF World Economic Outlook** (DataMapper API): blocked for now — the API ignores
-      the country filter and rejects Python clients (see NOTES.md). Forecasts remain a gap;
-      revisit (DBnomics mirrors WEO) in a later phase.
+- [x] **Forecasts**: World Bank Global Economic Prospects growth forecasts (June 2026 edition,
+      through 2028, 143 economies + regions), labeled FORECAST with the edition date. IMF WEO
+      still out: its API rejects Python clients and DBnomics' mirror is stale (Apr 2025). GEP
+      has growth only — inflation/debt forecasts remain a gap.
 - [ ] **Our World in Data** (CSV downloads): curated long-run series with clear sourcing.
 - [x] **Country handling in code**: names, ISO codes, aliases ("Ivory Coast" → CIV,
       "DRC" → COD), typo tolerance, regions and income groups; "Congo" rejected as ambiguous.
@@ -102,7 +103,8 @@ retrieval code), `get_data(source, series, countries, years)` → computed stats
       as a searchable source of RCT results (intervention → outcome → effect → country).
 - [x] Embedding model upgraded to `bge-small-en-v1.5`: better candidates (reworded MRR
       .148 → .262) but no end-to-end gain after Laya's rerank (14/18 and 5-6/12 either way).
-      The reranker is now the bottleneck — next retrieval item (NOTES.md "Retrieval").
+      The reranker was then the bottleneck: fusion constant 60 -> 10 lifted evidence in the
+      top 5 after reranking 14 -> 16/18 and 5 -> 6/12 (NOTES.md "Reranking").
 
 ## Phase 4: Subnational and long-run data
 

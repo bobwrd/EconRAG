@@ -169,6 +169,17 @@ def test_worldbank_ranking_excludes_aggregates():
     assert values == sorted(values, reverse=True) and r["world"]["value"] < values[-1]
 
 
+def test_worldbank_forecasts_are_labeled():
+    assert WB.search("GDP growth forecast")[0]["id"] == "NYGDPMKTPKDZ"
+    edition = WB.forecast_edition()
+    r = WB.get("NYGDPMKTPKDZ", ["Kenya"], start=2023)
+    years = [y for y, _ in r["economies"][0]["series [year, value]"]]
+    assert max(years) > int(edition[:4]), "forecasts should extend past the edition year"
+    assert "FORECASTS" in r["notes"][0] and edition in r["notes"][0]
+    ranked = WB.get("NYGDPMKTPKDZ", ["all"], n=3)["ranked"]
+    assert all(e["year"] == int(edition[:4]) for e in ranked)  # this year's forecast, not 2028's
+
+
 def test_worldbank_rejects_unknown_indicator():
     try:
         WB.get("NOT.AN.ID", ["KEN"])

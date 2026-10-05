@@ -74,6 +74,25 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
   Laya's ranking is *fused* with the retrieval ranking (reciprocal rank), not used alone:
   Laya only reads a chunk's first ~470 of its tokens (~44%) and was dropping chunks BM25
   ranked 3rd. Fact reached the prompt for 18/26 eval questions fused vs 16/26 Laya-only.
+  **Fusion constant `RERANK_RRF_C` = 10** (Oct 2026; was the textbook 60, at which ranks 1 and
+  15 score nearly alike, so neither ranking could promote its best picks). Chosen offline:
+  Laya scores for each question's top-30 candidates computed once, ~20 fusion rules compared
+  (evidence in top 3/4/5 after reranking; ~3-4 chunks actually fit the prompt):
+
+  | rule | original (18) | reworded (12) |
+  |---|---|---|
+  | no reranker | 10/11/12 | 3/3/3 |
+  | c=60 (old) | 11/14/14 | 4/5/5 |
+  | **c=10 (now)**, same for c=5 | **13/14/16** | **5/6/6** |
+  | c=20 | 11/14/14 | 5/6/6 |
+  | c=10 + Laya also scores the best-matching window, max of both | 13/16/16 | 5/6/6 |
+  | Laya only | 10/10/11 | 6/6/7 |
+  | bigger pools (20/30), retrieval weight 2, protect retrieval top-2 | no better than c=10 | |
+
+  Not adopted: the window+start variant (+2 at top-4, original set only) doubles Laya time.
+  Some evidence never reaches the top 30 (`race_gap_shrink` reworded) — no reranker fixes
+  that. 20 rules on 30 questions risks overfitting; c=5/10/20 trending smoothly is the main
+  reassurance.
 - **Routing**: Laya answers two independent `noul` (yes/no) questions — `needs_live_data`,
   `needs_documents` — rather than one 3-way `choice`. The 3-way version was tried first and
   failed: `both` acts as a statistical attractor bucket in forced 3-way classification and
@@ -120,7 +139,10 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
   (stats + text sparkline). Also `python fred.py` to sanity-check the API key/network.
 - `analyst.py` — the online tool-using agent (tool schemas, system prompt, loop).
 - `atlas.py` — Opportunity Atlas county data: profile, rank, correlate. `python atlas.py Cook IL`.
-- `worldbank.py` — World Bank WDI: keyword search over the indicator catalog (BM25 + `CORE`
+- `worldbank.py` — World Bank WDI (+ growth forecasts from Global Economic Prospects, API
+  source 27, indicator `NYGDPMKTPKDZ`, labeled FORECAST with the edition date; IMF WEO not
+  used — API rejects Python clients and the DBnomics mirror stops at Apr 2025): keyword
+  search over the indicator catalog (BM25 + `CORE`
   boost + everyday-word `SYNONYMS`), country-name resolution (aliases, fuzzy), per-country
   stats or all-economy rankings, and convention `NOTES` attached to results (survey years
   for poverty, PPP vs market rates, current vs constant prices). Catalog cached in
@@ -325,9 +347,9 @@ Remaining weaknesses, roughly in order of size:
 1. **The ~4B generator** still states wrong numbers or says "the context doesn't contain" a
    figure that's present, in roughly a quarter to a third of doc answers — even when the
    right chunk is in the prompt. Bounded by 8GB RAM; no prompt fix found.
-2. **Reworded questions reach the generator poorly** (5-6/12 in Laya's top 5, either
-   embedding model; see Retrieval). The reranker, not the embedding model, now loses the
-   most evidence — the next lever (e.g. fusing differently, or a larger pool to Laya).
+2. **Reworded questions reach the generator poorly** (6/12 in the top 5 after reranking,
+   with `RERANK_RRF_C` = 10; see Reranking). Remaining losses are evidence ranked below 15
+   or never retrieved at all — retrieval, not fusion, is the limit again.
 3. **Prompt budget**: at num_ctx 4096 only ~3-4 chunks fit, so some reranked-in facts are
    cut. phi4-mini@8192 fits all 5 in less memory (see Model choice) — re-test.
 

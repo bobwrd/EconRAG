@@ -64,8 +64,10 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
   paper questions. Kept bge-small anyway (better pool, negligible cost) — revisit if a
   reranker change shows otherwise. Weighting dense 2x helped neither set. Neither
   embedding model is strong alone — paraphrase stays hard. Online it matters less: the
-  analyst writes its own search queries in the field's vocabulary. Old embeddings kept as
-  `data/embeddings_all-MiniLM-L6-v2.npy`; `--model <name>` evaluates any model (cached).
+  analyst writes its own search queries in the field's vocabulary. Embeddings live in one file per model,
+  `data/embeddings_<model>.npy` (`ask.embeddings_path`), so the Phase 1 commit (which reads
+  the old single `data/embeddings.npy`, MiniLM) and current code both work from one `data/`;
+  `--model <name>` evaluates any model (computed once).
 - **Reranking**: Laya (`convaiinnovations/laya`, local, ~421M params) scores each candidate
   chunk with a `score` question (0-3 ordinal relevance) against `"Query: ... \n\nPassage: ..."`.
   Runs via `predict_batch` (one shared forward pass, not N sequential calls).

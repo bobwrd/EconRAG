@@ -7,8 +7,8 @@ run takes seconds — use it to measure every extraction/retrieval change.
     .venv/bin/python eval/retrieval_eval.py --rerank   # + Laya top-5 (~3 min)
     .venv/bin/python eval/retrieval_eval.py --reworded # paraphrased questions
     .venv/bin/python eval/retrieval_eval.py --model BAAI/bge-small-en-v1.5
-        # try another embedding model without touching data/: chunk embeddings
-        # are computed once and cached in data/embeddings_<model>.npy
+        # try another embedding model: chunk embeddings are computed once and
+        # kept in data/embeddings_<model>.npy (see ask.embeddings_path)
 
 eval/reworded_questions.json asks the same things as questions.json in everyday
 words that avoid the source's terms ("fall behind on loans", not
@@ -76,15 +76,12 @@ def main():
     questions = [q for q in json.loads((ROOT / "eval" / source).read_text())
                  if q.get("evidence") and q["id"] != "both_unemp_migration"]
     name = sys.argv[sys.argv.index("--model") + 1] if "--model" in sys.argv else ask.EMBEDDING_MODEL
-    chunks, embeddings, bm25 = ask.load_index()
     model = ask.load_embedder(name)
-    if name != ask.EMBEDDING_MODEL:
-        cache = ROOT / "data" / f"embeddings_{name.replace('/', '_')}.npy"
-        if not cache.exists():
-            np.save(cache, model.encode([c["text"] for c in chunks], show_progress_bar=True,
-                                        convert_to_numpy=True))
-        embeddings = np.load(cache)
-        embeddings /= np.linalg.norm(embeddings, axis=1, keepdims=True)
+    if not ask.embeddings_path(name).exists():  # first run with this model: embed every chunk once
+        chunks = json.loads((ask.DATA_DIR / "chunks.json").read_text())
+        np.save(ask.embeddings_path(name), model.encode([c["text"] for c in chunks],
+                                                         show_progress_bar=True, convert_to_numpy=True))
+    chunks, embeddings, bm25 = ask.load_index(name)
     print(f"{name} (reads {model.max_seq_length} tokens/chunk), {source}")
     position = {id(c): i for i, c in enumerate(chunks)}
 

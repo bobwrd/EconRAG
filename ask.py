@@ -111,9 +111,16 @@ Answer:"""
 _ollama = requests.Session()  # one pooled connection to Ollama, reused per question
 
 
-def load_index():
+def embeddings_path(model_name: str = EMBEDDING_MODEL) -> Path:
+    """One file per embedding model, so switching models (or checking out an
+    older commit that uses another one) never pairs a query encoder with
+    another model's chunk vectors. Same naming in ingest.py."""
+    return DATA_DIR / f"embeddings_{model_name.replace('/', '_')}.npy"
+
+
+def load_index(model_name: str = EMBEDDING_MODEL):
     chunks = json.load(open(DATA_DIR / "chunks.json"))
-    embeddings = np.load(DATA_DIR / "embeddings.npy")
+    embeddings = np.load(embeddings_path(model_name))
     # Normalize once at load, not on every question: cosine similarity is
     # then a single matrix-vector product.
     embeddings /= np.linalg.norm(embeddings, axis=1, keepdims=True)

@@ -124,7 +124,8 @@ def main():
     embeddings = model.encode(texts, show_progress_bar=True, convert_to_numpy=True)
 
     DATA_DIR.mkdir(exist_ok=True)
-    np.save(DATA_DIR / "embeddings.npy", embeddings)
+    # one file per model — must match ask.embeddings_path()
+    np.save(DATA_DIR / f"embeddings_{EMBEDDING_MODEL.replace('/', '_')}.npy", embeddings)
     with open(DATA_DIR / "chunks.json", "w") as f:
         json.dump(all_chunks, f)
 

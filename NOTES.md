@@ -43,12 +43,29 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
               rate limit) --> the local pipeline above for that question.
 ```
 
-- **Retrieval**: hybrid — `sentence-transformers` (`all-MiniLM-L6-v2`) cosine similarity
-  over a flat NumPy array (no vector DB, deliberately) fused by reciprocal rank with BM25
-  keyword scores (`BM25` class in `ask.py`, built at load, no dependency). Measured on
-  `eval/retrieval_eval.py` (evidence chunk in top 15): dense 14/18, BM25 17/18 but 3/8 on
-  reworded questions, hybrid 17/18 and 5/8. BM25 matters partly because MiniLM truncates at
-  256 tokens (~1/3 of a chunk); BM25 reads the whole chunk.
+- **Retrieval**: hybrid — `sentence-transformers` (`BAAI/bge-small-en-v1.5`, since Oct 2026;
+  was `all-MiniLM-L6-v2`) cosine similarity over a flat NumPy array (no vector DB,
+  deliberately) fused by reciprocal rank with BM25 keyword scores (`bm25.py`, built at load,
+  no dependency). bge queries take a prefix (`QUERY_PREFIXES`, applied by `load_embedder`).
+  Measured on `eval/retrieval_eval.py` (18 original questions) and `--reworded` (12
+  paraphrases in everyday words, `eval/reworded_questions.json`), evidence chunk rank:
+
+  | | original: top-5 / top-15 / MRR | reworded: top-5 / top-15 / MRR |
+  |---|---|---|
+  | BM25 only | 11 / 17 / .528 | 3 / 6 / .179 |
+  | MiniLM dense only | 9 / 14 / .395 | 3 / 7 / .111 |
+  | bge-small dense only | 9 / 15 / .413 | 3 / 6 / .198 |
+  | MiniLM + BM25 (old) | 11 / 17 / .500 | 4 / 6 / .148 |
+  | **bge-small + BM25 (now)** | **12 / 17 / .523** | 3 / **7 / .262** |
+
+  Better candidates, but **no end-to-end gain**: after Laya's top-5 (what reaches the
+  generator) original 14/18 for both models, reworded MiniLM 6/12 vs bge 5/12 (noise). Laya
+  drops evidence retrieval ranked 3rd/8th, so **the reranker is now the bottleneck** for
+  paper questions. Kept bge-small anyway (better pool, negligible cost) — revisit if a
+  reranker change shows otherwise. Weighting dense 2x helped neither set. Neither
+  embedding model is strong alone — paraphrase stays hard. Online it matters less: the
+  analyst writes its own search queries in the field's vocabulary. Old embeddings kept as
+  `data/embeddings_all-MiniLM-L6-v2.npy`; `--model <name>` evaluates any model (cached).
 - **Reranking**: Laya (`convaiinnovations/laya`, local, ~421M params) scores each candidate
   chunk with a `score` question (0-3 ordinal relevance) against `"Query: ... \n\nPassage: ..."`.
   Runs via `predict_batch` (one shared forward pass, not N sequential calls).
@@ -107,6 +124,13 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
   for poverty, PPP vs market rates, current vs constant prices). Catalog cached in
   `data/worldbank/` (delete to refresh). `python worldbank.py "extreme poverty" Ethiopia`.
 - `bm25.py` — keyword scoring shared by paper retrieval and the WDI catalog search.
+- `openalex.py` — OpenAlex: `search` (the analyst's `search_literature` tool: real papers with
+  abstracts, top 15 by relevance re-ranked with citation counts, versions merged) and
+  `check_citation` (does "Author and Author (Year)" match any real paper, +-1 year?). Used by
+  the analyst's fact-check to label unsupported citations "real but not retrieved" vs "likely
+  invented". Weak for common surnames with "et al." (almost always "exists"); strong for
+  invented author combinations. Anonymous budget $0.10/day ≈ 100 searches; no billing on
+  file, so never charged (429 when over); optional `OPENALEX_API_KEY` in `.env` = 10x.
 - **IMF not integrated (Oct 2026):** its DataMapper API returns every country regardless of
   the requested one (~120KB/call) and answers `curl` but rejects Python `requests` (403/HTML);
   not worked around (would mean disguising the client). Forecasts are the gap this leaves.
@@ -299,9 +323,9 @@ Remaining weaknesses, roughly in order of size:
 1. **The ~4B generator** still states wrong numbers or says "the context doesn't contain" a
    figure that's present, in roughly a quarter to a third of doc answers — even when the
    right chunk is in the prompt. Bounded by 8GB RAM; no prompt fix found.
-2. **Reworded questions retrieve poorly** (5/8 in top 15): MiniLM only reads 256 tokens per
-   chunk and paraphrase is the dense model's job. Next candidate: `bge-small-en-v1.5`
-   (same size, 512 tokens, ~130MB download — user approval needed, not yet tested).
+2. **Reworded questions reach the generator poorly** (5-6/12 in Laya's top 5, either
+   embedding model; see Retrieval). The reranker, not the embedding model, now loses the
+   most evidence — the next lever (e.g. fusing differently, or a larger pool to Laya).
 3. **Prompt budget**: at num_ctx 4096 only ~3-4 chunks fit, so some reranked-in facts are
    cut. phi4-mini@8192 fits all 5 in less memory (see Model choice) — re-test.
 

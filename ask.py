@@ -29,7 +29,9 @@ from groq_client import GROQ_API_KEY, GROQ_MODEL, GroqUnavailable
 from groq_client import post as groq_post
 
 DATA_DIR = Path("data")
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"  # see NOTES.md "Retrieval"
+# Text some embedding models expect before a search query (not before passages).
+QUERY_PREFIXES = {"BAAI/bge-small-en-v1.5": "Represent this sentence for searching relevant passages: "}
 LAYA_MODEL = "convaiinnovations/laya"
 # Generation models this pipeline knows how to budget for. `tokenizer` is the
 # model's own HF tokenizer (~2MB, no weights) used to measure prompts exactly —
@@ -124,6 +126,12 @@ def _ranks(scores: np.ndarray) -> np.ndarray:
     return ranks
 
 
+def load_embedder(name: str = EMBEDDING_MODEL):
+    model = SentenceTransformer(name)
+    model.query_prefix = QUERY_PREFIXES.get(name, "")
+    return model
+
+
 def top_k_chunks(question: str, model, chunks, embeddings, bm25, k=CANDIDATE_POOL):
     """Hybrid retrieval: cosine similarity and BM25 each rank every chunk,
     merged by reciprocal rank fusion. Measured on eval/: dense alone put the
@@ -131,7 +139,8 @@ def top_k_chunks(question: str, model, chunks, embeddings, bm25, k=CANDIDATE_POO
     3/8 on reworded questions; the fusion got 17/18 and 5/8 (best of both).
     Dense covers paraphrase; BM25 covers exact names, terms, and numbers —
     and MiniLM only reads a chunk's first 256 tokens, BM25 reads all of it."""
-    query_vec = model.encode([question], convert_to_numpy=True, normalize_embeddings=True)[0]
+    query = getattr(model, "query_prefix", "") + question
+    query_vec = model.encode([query], convert_to_numpy=True, normalize_embeddings=True)[0]
     # cosine similarity = dot product of normalized vectors
     fused = 1 / (60 + _ranks(embeddings @ query_vec)) + 1 / (60 + _ranks(bm25.scores(question)))
     top_indices = np.argsort(-fused)[:k]
@@ -323,7 +332,7 @@ def main():
     # it on CPU costs a little latency but avoids that contention entirely.
     print("Loading models...")
     index_f = pool.submit(load_index)
-    model_f = pool.submit(SentenceTransformer, EMBEDDING_MODEL)
+    model_f = pool.submit(load_embedder)
     agent_f = pool.submit(laya.load, LAYA_MODEL, device="cpu")
     tok_f = pool.submit(AutoTokenizer.from_pretrained, OLLAMA_TOKENIZER)
     atlas_f = pool.submit(Atlas) if USE_GROQ else None

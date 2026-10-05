@@ -1,0 +1,14 @@
+[
+  {"id": "credit_race_delinq", "question": "How common is it for Black Americans to have seriously overdue debts showing on their credit history by around age thirty, versus white Americans?", "evidence": "73% of Black individuals"},
+  {"id": "credit_class_delinq", "question": "Do people who grew up poor end up with more badly late bills on their credit files by their early thirties than people who grew up rich?", "evidence": "62% of those from low-income families"},
+  {"id": "credit_income_wealth", "question": "Can differences in how much people earn and own explain why some groups fall behind on debt payments more than others?", "evidence": "account for at most 10"},
+  {"id": "credit_hometown", "question": "When families relocate, how much does the place a kid grows up in shape whether they later fall behind on loans?", "evidence": "childhood exposure accounts for around 50%"},
+  {"id": "race_gap_shrink", "question": "For kids raised in poor households, did the pay difference between Black and white children get bigger or smaller for those born in the early 1990s compared with the late 1970s?", "evidence": "reducing white-Black earnings gaps for children from low-income families by 30%"},
+  {"id": "changing_mechanism", "question": "Why did opportunity improve for some groups of kids and worsen for others over recent generations?", "evidence": "as proxied by parental employment rates"},
+  {"id": "migration_100mi", "question": "How far from their childhood home do most people settle as young adults?", "evidence": "80% of young adults migrate less than 100 miles"},
+  {"id": "migration_groups", "question": "Are some racial or ethnic groups more likely to stay close to where they were raised?", "evidence": "Migration distances are shorter for Black and Hispanic"},
+  {"id": "abs_mobility", "question": "Are today's adults less likely than earlier generations to out-earn their mom and dad?", "evidence": "fell from 92% in the 1940 birth cohort to 50%"},
+  {"id": "abs_mobility_middle", "question": "Which families saw the biggest drop in their kids' chances of making more money than them?", "evidence": "fell the most for children with parents in the middle class"},
+  {"id": "covid_wage_split", "question": "Did the pandemic downturn hit well-paid and poorly-paid workers in the same way?", "evidence": "High-wage workers experienced a V-shaped recession"},
+  {"id": "sieve_lp", "question": "How can impulse responses be estimated when the effect of a shock depends on the economy's current condition?", "evidence": "We develop a sieve estimator"}
+]

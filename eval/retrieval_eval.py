@@ -3,8 +3,17 @@ Retrieval-only eval: does the chunk containing each question's `evidence`
 phrase (eval/questions.json) make it into the candidate pool? No LLM, so a
 run takes seconds — use it to measure every extraction/retrieval change.
 
-    .venv/bin/python eval/retrieval_eval.py            # cosine retrieval only
+    .venv/bin/python eval/retrieval_eval.py            # hybrid retrieval only
     .venv/bin/python eval/retrieval_eval.py --rerank   # + Laya top-5 (~3 min)
+    .venv/bin/python eval/retrieval_eval.py --reworded # paraphrased questions
+    .venv/bin/python eval/retrieval_eval.py --model BAAI/bge-small-en-v1.5
+        # try another embedding model without touching data/: chunk embeddings
+        # are computed once and cached in data/embeddings_<model>.npy
+
+eval/reworded_questions.json asks the same things as questions.json in everyday
+words that avoid the source's terms ("fall behind on loans", not
+"delinquency"): that's where keyword search can't help and the embedding model
+has to carry retrieval.
 
 Evidence matching ignores whitespace, quotes, and dash style, so glued words
 ("73%ofBlack") still count as present, but text scrambled by false table
@@ -61,12 +70,22 @@ def summarize(rows, label=""):
 
 
 def main():
-    from sentence_transformers import SentenceTransformer
+    import numpy as np
 
-    questions = [q for q in json.loads((ROOT / "eval" / "questions.json").read_text())
+    source = "reworded_questions.json" if "--reworded" in sys.argv else "questions.json"
+    questions = [q for q in json.loads((ROOT / "eval" / source).read_text())
                  if q.get("evidence") and q["id"] != "both_unemp_migration"]
+    name = sys.argv[sys.argv.index("--model") + 1] if "--model" in sys.argv else ask.EMBEDDING_MODEL
     chunks, embeddings, bm25 = ask.load_index()
-    model = SentenceTransformer(ask.EMBEDDING_MODEL)
+    model = ask.load_embedder(name)
+    if name != ask.EMBEDDING_MODEL:
+        cache = ROOT / "data" / f"embeddings_{name.replace('/', '_')}.npy"
+        if not cache.exists():
+            np.save(cache, model.encode([c["text"] for c in chunks], show_progress_bar=True,
+                                        convert_to_numpy=True))
+        embeddings = np.load(cache)
+        embeddings /= np.linalg.norm(embeddings, axis=1, keepdims=True)
+    print(f"{name} (reads {model.max_seq_length} tokens/chunk), {source}")
     position = {id(c): i for i, c in enumerate(chunks)}
 
     def rank_fn(question):  # the pipeline's own retrieval, over the whole corpus

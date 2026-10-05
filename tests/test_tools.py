@@ -12,6 +12,7 @@ or FRED revises old data, update them deliberately.
 """
 
 import json
+import re
 import sys
 import traceback
 from pathlib import Path
@@ -174,6 +175,36 @@ def test_worldbank_rejects_unknown_indicator():
         raise AssertionError("expected ValueError")
     except ValueError:
         pass
+
+
+# ------------------------------------------------------------------ openalex (network)
+def test_openalex_search_returns_citable_papers():
+    import openalex
+    papers = openalex.search("microfinance randomized evaluation", n=4)
+    assert papers and all(re.match(r".+ \((19|20)\d\d\)$", p["cite_as"]) for p in papers)
+    titles = [p["title"] for p in papers]
+    assert len(titles) == len(set(titles)), "working-paper and journal versions should be merged"
+    assert any("Banerjee" in p["cite_as"] for p in papers)
+
+
+def test_openalex_spots_invented_citations():
+    import openalex
+    assert openalex.check_citation("Okonjo and Whitfield (2019)") == {"exists": False, "match": None}
+    assert openalex.check_citation("Smithson and Okafor (2021)")["exists"] is False
+    assert openalex.check_citation("Miguel and Kremer (2004)")["exists"] is True
+    assert openalex.check_citation("no citation here") is None
+
+
+def test_analyst_classifies_unsupported_citations():
+    bot = _bot()
+    script = [_tool_call("search_literature", {"query": "microfinance randomized evaluation"}),
+              {"content": "Banerjee et al. (2015) find modest effects; Okonjo and Whitfield (2019) disagree."},
+              {"content": "Banerjee et al. (2015) find modest effects."}]
+    (answer, log), sent = _with_fake(script, lambda: bot.run("microfinance?"))
+    feedback = sent[2]["messages"][-1]["content"]
+    assert "Okonjo and Whitfield (2019" in feedback and "likely invented" in feedback
+    assert "Banerjee et al. (2015" not in feedback  # returned by the tool, so supported
+    assert answer == "Banerjee et al. (2015) find modest effects." and "Not verified" not in log
 
 
 # ------------------------------------------------------------------ verify

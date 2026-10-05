@@ -94,13 +94,15 @@ retrieval code), `get_data(source, series, countries, years)` → computed stats
 - [ ] **Development library**: open-access PDFs (World Bank Policy Research Working Papers,
       NBER development papers, J-PAL and 3ie evidence reviews), ingested with title, authors,
       and year per chunk so citations are real references, not filenames.
-- [ ] **OpenAlex** (free, ~250M works): `search_literature` for discovery beyond the local
-      library, and **citation verification** in `verify.py` (does the cited paper exist, with
-      those authors and that year?). Fixes invented citations at the source.
+- [x] **OpenAlex** (free, ~250M works): `search_literature` tool (abstracts count as
+      evidence for the fact-check) and citation existence checks: unsupported citations are
+      labeled "real, not retrieved" vs "likely invented" in the revision feedback. Built Oct
+      2026 on branch `phase3-citations-retrieval`; untested against live Groq.
 - [ ] **"What works" evidence**: J-PAL evaluations and the 3ie Development Evidence Portal
       as a searchable source of RCT results (intervention → outcome → effect → country).
-- [ ] Embedding model upgrade to `bge-small-en-v1.5` (reads 512 tokens vs MiniLM's 256;
-      NOTES.md weakness #2). Re-check `eval/retrieval_eval.py` before and after.
+- [x] Embedding model upgraded to `bge-small-en-v1.5`: better candidates (reworded MRR
+      .148 → .262) but no end-to-end gain after Laya's rerank (14/18 and 5-6/12 either way).
+      The reranker is now the bottleneck — next retrieval item (NOTES.md "Retrieval").
 
 ## Phase 4: Subnational and long-run data
 

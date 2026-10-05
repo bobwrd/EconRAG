@@ -16,7 +16,7 @@ DOCS_DIR = Path("docs")
 DATA_DIR = Path("data")
 CHUNK_WORDS = 500
 CHUNK_OVERLAP = 50
-EMBEDDING_MODEL = "all-MiniLM-L6-v2"
+EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"  # see NOTES.md "Retrieval"
 # pdfplumber is CPU-bound and single-threaded; a few processes extract PDFs in
 # parallel. Capped low because each worker holds a whole parsed PDF in memory.
 EXTRACT_WORKERS = 4

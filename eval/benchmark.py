@@ -2,6 +2,7 @@
 ROADMAP Phase 0b: a 30-question benchmark of the online analyst, scored by code.
 
     .venv/bin/python eval/benchmark.py run [name]      # answers -> eval/benchmark/<name>.jsonl
+    .venv/bin/python eval/benchmark.py run [name] --only retest   # the ~22 questions recent fixes target
     .venv/bin/python eval/benchmark.py score [name]    # grade one run (default: latest)
     .venv/bin/python eval/benchmark.py questions       # write eval/external/questions.md
     .venv/bin/python eval/benchmark.py score-external chatgpt   # grade eval/external/chatgpt.md
@@ -229,7 +230,27 @@ def score(rows: dict[str, str], title: str):
 
 
 # ---------------------------------------------------------------- running
-def run(name: str):
+# `run <name> --only retest`: the questions the Oct 2026 fixes should change —
+# the first run's real failures plus the one never run, the four correct answers
+# that got false "not verified" flags, and every question added since (~1 day of
+# Groq budget instead of ~2). `--only` also takes a comma-separated list of ids.
+RETEST = ["wb_ner_fertility", "trap_ind_ppp_vs_market", "race_gap_shrink", "unanswerable_minwage",
+          "wb_ken_gdppc", "wb_nga_lifeexp", "wb_nga_pop", "trap_us_employment"]
+NEW_CATEGORIES = ("compute", "dev_lit", "longrun")
+
+
+def selected(questions: list[dict], only: str | None) -> list[dict]:
+    if not only:
+        return questions
+    ids = set(RETEST) if only == "retest" else set(only.split(","))
+    keep = [q for q in questions if q["id"] in ids or (only == "retest" and q["category"] in NEW_CATEGORIES)]
+    unknown = ids - {q["id"] for q in questions}
+    if unknown:
+        sys.exit(f"unknown question ids: {', '.join(sorted(unknown))}")
+    return keep
+
+
+def run(name: str, only: str | None = None):
     import laya
     from sentence_transformers import SentenceTransformer
     from transformers import AutoTokenizer
@@ -243,7 +264,7 @@ def run(name: str):
     OUT_DIR.mkdir(exist_ok=True)
     path = OUT_DIR / f"{name}.jsonl"
     done = {json.loads(l)["id"] for l in path.read_text().splitlines()} if path.exists() else set()
-    todo = [q for q in load_questions() if q["id"] not in done]
+    todo = [q for q in selected(load_questions(), only) if q["id"] not in done]
     print(f"{len(done)} done, {len(todo)} to go -> {path}", flush=True)
     if not todo:
         return
@@ -299,8 +320,9 @@ def latest_run() -> str:
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else "score"
     arg = sys.argv[2] if len(sys.argv) > 2 else None
+    only = sys.argv[sys.argv.index("--only") + 1] if "--only" in sys.argv else None
     if cmd == "run":
-        run(arg or datetime.now().strftime("%Y-%m-%d"))
+        run(arg if arg and arg != "--only" else datetime.now().strftime("%Y-%m-%d"), only)
     elif cmd == "score":
         name = arg or latest_run()
         rows = {r["id"]: r["answer"] for r in map(json.loads, (OUT_DIR / f"{name}.jsonl").read_text().splitlines())}

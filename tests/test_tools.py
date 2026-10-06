@@ -476,6 +476,14 @@ def test_tool_schemas_stay_small():
 
 
 # ------------------------------------------------------------------ benchmark scorer
+def test_benchmark_retest_selects_fixed_and_new_questions():
+    import benchmark
+    ids = {q["id"] for q in benchmark.selected(benchmark.load_questions(), "retest")}
+    assert len(ids) == 22 and set(benchmark.RETEST) <= ids and "lr_kor_gha" in ids, ids
+    assert "wb_bra_gini" not in ids  # passed cleanly the first time
+    assert [q["id"] for q in benchmark.selected(benchmark.load_questions(), "wb_bra_gini")] == ["wb_bra_gini"]
+
+
 def test_benchmark_number_parsing_and_grading():
     import benchmark
     assert benchmark.numbers("232.7 million; $2,362.86; 11.3 pp") == [232.7e6, 2362.86, 11.3]

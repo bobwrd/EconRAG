@@ -34,8 +34,8 @@ won't change. This project wins on what they can't do reliably:
 | 0. Measure | Done. Baseline 27/30 on `main`; benchmark now 45 questions, re-run on `after-benchmark` pending |
 | 1. Core data | Done except Our World in Data series beyond Maddison |
 | 2. Computation | Helper library done (`devecon.py`); `run_python` tool and charts not started |
-| 3. Literature | Development library (15 papers), OpenAlex, citation checks done; RCT databases not started |
-| 4. Long-run / subnational | Maddison and Penn World Table 11.0 live; subnational not started |
+| 3. Literature | Done: development library (15 papers), OpenAlex + citation checks, J-PAL's 1,318 evaluation summaries. 3ie not usable (no public API) |
+| 4. Long-run / subnational | Done: Maddison, Penn World Table 11.0, DHS surveys (with regions), Global Data Lab subnational HDI; other agencies deferred |
 | 5. Workflows | Not started |
 | 6. Interface | Not started |
 
@@ -134,8 +134,17 @@ retrieval code), `get_data(source, series, countries, years)` → computed stats
       evidence for the fact-check) and citation existence checks: unsupported citations are
       labeled "real, not retrieved" vs "likely invented" in the revision feedback. Built Oct
       2026 on branch `phase3-citations-retrieval`; untested against live Groq.
-- [ ] **"What works" evidence**: J-PAL evaluations and the 3ie Development Evidence Portal
-      as a searchable source of RCT results (intervention → outcome → effect → country).
+- [x] **"What works" evidence: J-PAL** (`jpal.py`, Oct 2026): 1,318 of the 1,321 evaluation summaries
+      (3 pages return server errors on J-PAL's side; listed via the sitemap; robots.txt allows
+      /evaluation/), ~90 min once at one page a
+      second into `data/jpal/evaluations.json`. Tool `search_evaluations`: BM25 over title,
+      sector, intervention, outcomes, countries (detected from the text — the pages have no
+      country field) and results; returns researchers, countries, timeline, sample, and the
+      first 160 words of "Results and policy lessons", which count as evidence for the
+      fact-check. Cost: ~170 tokens per request (schema + prompt line).
+- [-] **3ie Development Evidence Portal**: not integrated. No public API — the site's data comes
+      from an internal GraphQL endpoint that expects a login token; not worked around (same
+      rule as the IMF).
 - [x] Embedding model upgraded to `bge-small-en-v1.5`: better candidates (reworded MRR
       .148 → .262) but no end-to-end gain after Laya's rerank (14/18 and 5-6/12 either way).
       The reranker was then the bottleneck: fusion constant 60 -> 10 lifted evidence in the
@@ -143,11 +152,20 @@ retrieval code), `get_data(source, series, countries, years)` → computed stats
 
 ## Phase 4: Subnational and long-run data
 
-- [ ] **Global Data Lab**: subnational HDI, income, education, and health for ~160
-      countries; the development analogue of the county Atlas (`region_profile`,
-      `rank_regions`).
-- [ ] **DHS Program indicators API**: health, fertility, nutrition, and education from
-      household surveys.
+- [x] **Global Data Lab** (`gdl.py`, Oct 2026): Subnational HDI database v10.2 — HDI, health,
+      education, and income indices, life expectancy, expected and mean years of schooling,
+      GNI per capita (2021 PPP; verified against UNDP: USA $73,644 vs $73,650), population, by
+      sex — for 1,805 regions in 188 countries, 1990-2023. Downloads need a free account, so the
+      user saves the CSV into `data/gdl/` by hand. `source="gdl"`: a country's national value
+      and every region (highest/lowest, spread, biggest gain since `start`; top and bottom 6
+      shown), or `["all"]` to rank regions worldwide. Regions follow survey boundaries (Kenya:
+      8 former provinces; DHS has the 47 counties).
+- [x] **DHS Program indicators API** (`dhs.py`, Oct 2026; open API, no key): 3,257
+      indicators, ~90 countries, as `source="dhs"` in search_data/get_data. Headline value
+      per survey (the API's preferred reference period), every survey with year and type
+      (DHS/MIS/AIS), change over time, and `regions=true` for subnational values: highest/
+      lowest region, spread, median, regions whose confidence interval clears the national
+      value (shown to the model as the top and bottom 6 regions — Kenya has 47 counties).
 - [x] **Maddison Project 2023**: live via Our World in Data's CSV (GDP per capita back to year
       1; no population). `longrun.py`, `source="longrun"`: per-country stats, two-country
       comparison with ratios, overtaking and divergence years (e.g. South Korea passed Ghana in
@@ -161,8 +179,10 @@ retrieval code), `get_data(source, series, countries, years)` → computed stats
       per worker 4.55%/yr = capital 2.50 + schooling 0.72 + TFP 1.34 (PWT's own TFP: 1.46).
       Note PWT and Maddison can disagree (Korea passes Ghana in 1975 in PWT's rgdpe, 1967 in
       Maddison); results name their source. Not yet in the benchmark.
-- [ ] Later, if useful: WHO GHO (health), UNESCO UIS (education), FAOSTAT (agriculture),
-      ILOSTAT (labor), OECD CRS (aid flows).
+- [-] Deferred (Oct 2026): WHO GHO, UNESCO UIS, FAOSTAT, ILOSTAT, OECD CRS. WDI already
+      republishes most of their headline series (WHO health, UIS education, ILO modeled labor,
+      FAO agriculture, net aid received); each extra source adds tool text to every request.
+      Revisit if the benchmark shows a gap (most likely: aid flows by donor, OECD CRS).
 
 ## Phase 5: Workflows people repeat
 

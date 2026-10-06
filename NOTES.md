@@ -167,6 +167,16 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
   measures, Gini/Lorenz/Palma, population-weighted group means with coverage, growth
   decomposition, beta/sigma convergence). Not yet a tool; meant for the Phase 2 sandbox.
 - `PAPER_PROPOSAL.md` — 15 open-access development papers proposed for `docs/`, awaiting approval.
+- `dhs.py` — DHS Program API (open, no key): household-survey indicators for ~90 countries,
+  `source="dhs"`; headline value = the API's `IsPreferred` row; `regions=true` for subnational
+  values (trimmed to the top/bottom 6 in analyst.py). DHS country codes are not ISO2 (India =
+  IA, Niger = NI); catalog cached in `data/dhs/`. `python dhs.py "under-5 mortality" Kenya --regions`.
+- `gdl.py` — Global Data Lab subnational HDI (`source="gdl"`), from a CSV the user saves into
+  `data/gdl/` (downloads need a free account). `lgnic` in the file is ln(GNI per capita, 2021
+  PPP $) and `pop` is thousands; columns ending f/m are by sex. `python gdl.py shdi Kenya`.
+- `jpal.py` — J-PAL's randomized-evaluation summaries (`search_evaluations` tool). `python
+  jpal.py --fetch` once (~90 min: the site answers in ~3s a page, plus a 1s pause; resumable);
+  URLs come from the sitemap because the /evaluations listing pages never run out.
 - `bm25.py` — keyword scoring shared by paper retrieval and the WDI catalog search.
 - `openalex.py` — OpenAlex: `search` (the analyst's `search_literature` tool: real papers with
   abstracts, top 15 by relevance re-ranked with citation counts, versions merged) and

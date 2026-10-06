@@ -21,6 +21,12 @@ in the answer traces back to what was actually retrieved.
   deworming, graduation programs, education, poverty measurement, growth, migration) and US
   mobility research — searched with hybrid keyword + semantic retrieval and a local reranker,
   cited by author and year
+- **J-PAL**: summaries of 1,318 randomized evaluations ("what works" evidence), with
+  countries, samples, and results
+- **DHS household surveys**: health, nutrition, fertility, and education for ~90 developing
+  countries, including values by region within a country
+- **Global Data Lab**: human development (HDI, life expectancy, schooling, income) for 1,805
+  regions in 188 countries, 1990-2023
 - **OpenAlex**: published research beyond the library (~250M works), also used to check
   that cited papers exist
 
@@ -68,7 +74,12 @@ GROQ_API_KEY=...      # https://console.groq.com — optional; without it, local
     `.venv/bin/python longrun.py --import`
   - Penn World Table 11.0: `.venv/bin/python longrun.py --import-fred-pwt` (fetches FRED's
     copy, ~20 minutes; or save the official `pwt110.xlsx` and use `--import`)
-- **World Bank** catalog: downloaded automatically into `data/worldbank/` on first use
+- **J-PAL** evaluations: `.venv/bin/python jpal.py --fetch` (once, ~90 minutes, resumable)
+- **Global Data Lab**: with a free account, download the Subnational HDI CSV (all countries,
+  years, and indicators) from [globaldatalab.org/shdi/download](https://globaldatalab.org/shdi/download/)
+  into `data/gdl/`
+- **World Bank** and **DHS** catalogs: downloaded automatically into `data/worldbank/` and
+  `data/dhs/` on first use
 
 ## Use
 
@@ -79,6 +90,9 @@ GROQ_API_KEY=...      # https://console.groq.com — optional; without it, local
 .venv/bin/python tests/test_tools.py             # tool tests (no API usage)
 .venv/bin/python tests/test_devecon.py           # development-economics formulas
 .venv/bin/python tests/test_longrun.py           # long-run data
+.venv/bin/python tests/test_dhs.py               # DHS surveys (live API)
+.venv/bin/python tests/test_jpal.py              # J-PAL evaluations
+.venv/bin/python tests/test_gdl.py               # Global Data Lab
 
 .venv/bin/python eval/benchmark.py run NAME                # 45-question benchmark (resumable;
                                                            # ~2 days of Groq's free tier)

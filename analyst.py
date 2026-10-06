@@ -29,6 +29,9 @@ import time
 import fred
 import openalex
 import verify
+import dhs
+import gdl
+import jpal
 import longrun
 import worldbank
 from atlas import CORRELATE_METRICS, GENDERS, METRICS, RACES, Atlas
@@ -52,8 +55,9 @@ SYSTEM_PROMPT = """You are an economics research analyst specializing in develop
 Answer from your tools, not from memory:
 - search_papers: the user's research library (mostly Opportunity Insights research: intergenerational mobility, neighborhoods, credit access, migration, the Economic Tracker) — full-text passages. Use it for research findings, mechanisms, and "why" questions on those topics.
 - search_literature: published research beyond the library (OpenAlex, ~250M papers): real papers with authors, year, venue, citation count, and abstract. Use it for "what does research say" / "what works" questions the library doesn't cover — most development topics (cash transfers, microfinance, deworming, ...). Search with the topic's standard terms; you only see abstracts, so claim no more than an abstract states.
+- search_evaluations: J-PAL's summaries of ~1,100 randomized evaluations (mostly in developing countries) with their results. Use it with search_literature for "what works" / "does X work" questions; say where and when each study ran.
 - county_profile / rank_counties / correlate_counties: the Opportunity Atlas (every US county). Use them for questions about specific places, comparisons between places, or which local characteristics go with mobility. For a city, use its main county (Chicago -> Cook County, IL) and say so.
-- search_data / get_data: source "worldbank" (default) = World Development Indicators, ~1,500 indicators for ~217 economies plus regions and income groups (e.g. "Sub-Saharan Africa", "Low income") — growth, poverty, inequality, health, education, labor, trade — plus World Bank GDP growth FORECASTS (search "growth forecast"). Present forecasts as forecasts, with the edition date the result gives. Use countries ["all"] to rank every economy. Source "fred" = US and high-frequency series (monthly unemployment, CPI); for inflation from a price index use units "pc1": the raw index is a level, not a rate. Source "longrun" = history before WDI: Maddison GDP per capita back to year 1 (mpd.gdppc, 2011 int$) and Penn World Table output, capital, schooling, TFP since 1950; 2+ countries also returns ratios, overtaking and divergence years; series pwt.growth_accounting splits growth per worker into capital, schooling and TFP. Search first unless you know the exact id.
+- search_data / get_data: source "worldbank" (default) = World Development Indicators, ~1,500 indicators for ~217 economies plus regions and income groups (e.g. "Sub-Saharan Africa", "Low income") — growth, poverty, inequality, health, education, labor, trade — plus World Bank GDP growth FORECASTS (search "growth forecast"). Present forecasts as forecasts, with the edition date the result gives. Use countries ["all"] to rank every economy. Source "fred" = US and high-frequency series (monthly unemployment, CPI); for inflation from a price index use units "pc1": the raw index is a level, not a rate. Source "longrun" = history before WDI: Maddison GDP per capita back to year 1 (mpd.gdppc, 2011 int$) and Penn World Table output, capital, schooling, TFP since 1950; 2+ countries also returns ratios, overtaking and divergence years; series pwt.growth_accounting splits growth per worker into capital, schooling and TFP. Source "dhs" = Demographic and Health Surveys, ~90 developing countries, one value per survey every ~5 years (child mortality, stunting, fertility, contraception, maternal care, vaccination, schooling, water, HIV, women's empowerment); regions true for subnational values; always state the survey year. Source "gdl" = Global Data Lab subnational HDI, life expectancy, schooling, GNI per capita (2021 PPP) for 1,805 regions in 188 countries, 1990-2023: every region of a country, or ["all"] to rank regions worldwide; metrics take f/m for female/male (lifexpf). Search first unless you know the exact id.
 
 Economics conventions:
 - "Employment rate" means the employment-population ratio (FRED EMRATIO), NOT 100 minus the unemployment rate (the unemployed are only those looking for work). Labor force participation is CIVPART.
@@ -68,7 +72,7 @@ Economics conventions:
 Rules:
 1. Every number and every factual claim about a place or trend must come from a tool result in this conversation — if you didn't fetch it, don't assert it. For correlations, use the tool's "interpretation" for the direction. You may do simple arithmetic on those numbers (differences, ratios); show it. Your answer is automatically checked: numbers not found in tool results are flagged to the user.
 2. For "why" or "what explains" questions about places, combine the county data with search_papers. Build the local part ONLY from county_profile's characteristics_consistent_with_gap (computed: differs notably from average AND correlates with mobility). A characteristic marked "about average" cannot explain a gap — mention it only to rule it out; also say which characteristics point the other way. Say "is consistent with" / "is associated with", never "because", "due to", or "largely explains" — unless a search_papers passage makes that causal claim, then attribute it to the paper.
-3. Mention a paper or research finding ONLY if it appeared in a search_papers or search_literature result in this conversation; if you didn't search, don't cite research. Cite inline: for library passages, the author-year their label gives, e.g. (Chetty, Hendren, Kline, Saez and Turner (2014)) or (Chetty et al. (2014)), the result's cite_as form, e.g. (Banerjee et al. (2015)), for search_literature, (Opportunity Atlas) for county data, (World Bank: <indicator id>, <year>) and (FRED: <series id>, <date>) for data. Never invent paper titles, authors, years, table numbers, or figure numbers — citations are automatically checked against the passages and against OpenAlex.
+3. Mention a paper or research finding ONLY if it appeared in a search_papers, search_literature, or search_evaluations result in this conversation; if you didn't search, don't cite research. Cite inline: for library passages, the author-year their label gives, e.g. (Chetty, Hendren, Kline, Saez and Turner (2014)) or (Chetty et al. (2014)), the result's cite_as form, e.g. (Banerjee et al. (2015)), for search_literature, (J-PAL: <title>) for search_evaluations, (Opportunity Atlas) for county data, (World Bank: <indicator id>, <year>) and (FRED: <series id>, <date>) for data. Never invent paper titles, authors, years, table numbers, or figure numbers — citations are automatically checked against the passages and against OpenAlex.
 4. Earlier turns are context for follow-ups ("there", "what about..."); a self-contained question is about the US unless it names a place. If a county lookup is ambiguous and the question doesn't make the right one obvious, ask the user which one they mean.
 5. If the tools don't contain the answer, say so plainly instead of filling the gap.
 6. Call independent tools together in the same turn rather than one per turn. Don't repeat a search with near-identical wording.
@@ -82,7 +86,7 @@ Rules:
 _race = {"type": "string", "enum": list(RACES)}
 _gender = {"type": "string", "enum": list(GENDERS)}
 _state = {"type": "string", "description": "2-letter abbreviation; omit for all US"}
-_source = {"type": "string", "enum": ["worldbank", "fred", "longrun"], "description": "default worldbank"}
+_source = {"type": "string", "enum": ["worldbank", "fred", "longrun", "dhs", "gdl"], "description": "default worldbank"}
 _metric_doc = ("upward_mobility: avg adult income percentile of kids from 25th-percentile families; "
                "incarceration: % of them incarcerated in 2010. race/gender apply to these two only. "
                "Other metrics are county characteristics, mostly ~2010.")
@@ -99,6 +103,8 @@ TOOLS = [
           "passages labeled with source file.", {"query": {"type": "string"}}, ["query"]),
     _tool("search_literature", "Search published research (OpenAlex): real papers with abstracts.",
           {"query": {"type": "string"}, "from_year": {"type": "integer", "description": "optional"}}, ["query"]),
+    _tool("search_evaluations", "Search J-PAL randomized evaluation summaries (intervention, country, results).",
+          {"query": {"type": "string"}}, ["query"]),
     _tool("county_profile", "Opportunity Atlas profile of one US county: upward mobility and "
           "incarceration for kids from low-income families (overall/by race/by gender) vs state and "
           "national averages, plus county characteristics.",
@@ -131,6 +137,7 @@ TOOLS = [
                      "description": "fred only. lin=level, pc1/pch=% change vs year ago/previous period"},
            "order": {"type": "string", "enum": ["highest", "lowest"], "description": "with [\"all\"]"},
            "n": {"type": "integer", "description": "with [\"all\"]: how many, default 10"},
+           "regions": {"type": "boolean", "description": "dhs: values by region within the (first) country"},
            "peers": {"type": "boolean", "description": "worldbank: add income-group and region "
                      "figures and rank within each"}},
           ["series"]),
@@ -143,6 +150,9 @@ def _summary(name: str, result: dict) -> str:
         return f"error: {result['error']}"
     if name == "search_literature":
         return "; ".join(w["cite_as"] for w in result["papers"]) or "no papers found"
+    if name == "search_evaluations":
+        return "; ".join(f"{e['title']} ({', '.join(e['countries']) or '?'})" for e in result["evaluations"]) \
+            or "no evaluations found"
     if name == "search_papers":
         return "passages from " + ", ".join(dict.fromkeys(result["sources"]))
     if name == "county_profile":
@@ -160,10 +170,23 @@ def _summary(name: str, result: dict) -> str:
     if name == "get_data" and "series_id" in result:  # FRED
         return (f"{result['series_id']} {result['first']['date']}..{result['latest']['date']}  "
                 f"{result['sparkline']}  latest {result['latest']['value']}")
+    if name == "get_data" and str(result.get("source", "")).startswith("Global Data Lab"):
+        if "ranked" in result:
+            top = result["ranked"][0] if result["ranked"] else None
+            return f"{result['metric']}: {len(result['ranked'])} of {result['regions_with_data']} regions" + \
+                (f", #1 {top['region']}, {top['country']} ({top['value']}, {top['year']})" if top else "")
+        parts = [f"{c['country']} {c.get('national')} ({c.get('year')}), regions {c['lowest']['value']}-"
+                 f"{c['highest']['value']}" if "highest" in c else f"{c['country']}: no regional data"
+                 for c in result["countries"]]
+        return f"{result['metric']}: " + "; ".join(parts)
     if name == "get_data" and "ranked" in result:
         top = result["ranked"][0] if result["ranked"] else None
         return f"{result['indicator']}: {len(result['ranked'])} of {result['economies_with_data']} economies" + \
             (f", #1 {top['economy']} ({top['value']}, {top['year']})" if top else "")
+    if name == "get_data" and str(result.get("source", "")).startswith("DHS"):
+        parts = [f"{c['country']} {c['latest']['value']} ({c['latest']['year']})" if "latest" in c
+                 else f"{c['country']}: no survey" for c in result["countries"][:4]]
+        return f"{result['indicator']}: " + "; ".join(parts)
     if name == "get_data" and "countries" in result:  # longrun
         parts = [f"{c['country']} {c['first']['year']} {c['first']['value']} -> {c['last']['year']} {c['last']['value']}"
                  if "last" in c else f"{c['country']}: no data" for c in result["countries"][:4]]
@@ -188,6 +211,24 @@ def paper_label(source: str) -> str:
     from papers.json (so citations are real references), plus the file name."""
     meta = PAPERS.get(source)
     return f'{meta["cite"]}, "{meta["title"]}"; file {source}' if meta else source
+
+
+DHS_REGIONS_SHOWN = 6  # top and bottom; Kenya alone has 47 counties (~2.7K chars)
+
+
+def _trim_regions(result: dict) -> dict:
+    """Keeps a DHS regional breakdown small enough for the 8K-token request limit:
+    the highest and lowest regions; spread, median and national value are already computed."""
+    for c in result.get("countries", []):
+        regions = c.get("regions")
+        if not isinstance(regions, dict):
+            continue
+        key = next((k for k in regions if k.startswith("regions [")), None)
+        if key and len(regions[key]) > 2 * DHS_REGIONS_SHOWN:
+            rows = regions[key]
+            regions[key] = rows[:DHS_REGIONS_SHOWN] + [["...", f"{len(rows) - 2 * DHS_REGIONS_SHOWN} more"]] \
+                + rows[-DHS_REGIONS_SHOWN:]
+    return result
 
 
 FRED_NEWER_WINDOW = datetime.timedelta(days=3 * 365)
@@ -219,6 +260,9 @@ class Analyst:
         self.atlas = atlas or Atlas()
         self.wb = wb or worldbank.WorldBank()
         self._longrun = None  # loaded on first use: most questions don't need it
+        self._jpal = None
+        self._dhs = None
+        self._gdl = None
         self.history: list[dict] = []
         self.last_tokens = 0  # Groq tokens used by the latest run() (free tier: 200K/day)
         self._tools_chars = len(json.dumps(TOOLS))
@@ -247,6 +291,15 @@ class Analyst:
                                    for w in papers]
                 self._sources |= {w["cite_as"] for w in papers}
                 return {"papers": papers}
+            if name == "search_evaluations":
+                if self._jpal is None:
+                    self._jpal = jpal.JPAL()  # FileNotFoundError (not fetched yet) reaches the model
+                result = self._jpal.search(args["query"])
+                # results text counts as evidence: its numbers and the J-PAL cite verify
+                self._passages += [f"{e['cite_as']}. {e['researchers']} ({e['timeline']}). {e['results']}"
+                                   for e in result["evaluations"]]
+                self._sources |= {e["cite_as"] for e in result["evaluations"]}
+                return result
             if name == "county_profile":
                 return self.atlas.county_profile(args["county"], args.get("state"),
                                                  bool(args.get("demographics")))
@@ -258,6 +311,8 @@ class Analyst:
                 source = args.get("source")
                 results = (fred.search_series(args["query"]) if source == "fred" else
                            self.longrun().search(args["query"]) if source == "longrun" else
+                           self.dhs().search(args["query"]) if source == "dhs" else
+                           self.gdl().search(args["query"]) if source == "gdl" else
                            self.wb.search(args["query"]))
                 if not results:
                     return {"results": [], "note": "No series matched. Try 2-3 plain keywords or the other "
@@ -269,6 +324,15 @@ class Analyst:
                                               args.get("units") or "lin")
                     return _with_newest_fred(stats, args)
                 year = lambda v: int(str(v)[:4]) if v else None  # noqa: E731
+                if args.get("source") == "gdl":
+                    if not args.get("countries"):
+                        return {"error": "gdl data needs `countries` (names, ISO3 codes, or [\"all\"])"}
+                    return self.gdl().get(args["series"], args["countries"], year(args.get("start")),
+                                          year(args.get("end")), args.get("order") or "highest", args.get("n") or 10)
+                if args.get("source") == "dhs":
+                    return _trim_regions(self.dhs().get(args["series"], args.get("countries") or [],
+                                                        year(args.get("start")), year(args.get("end")),
+                                                        bool(args.get("regions"))))
                 if args.get("source") == "longrun":
                     return self._get_longrun(args["series"], args.get("countries") or [],
                                              year(args.get("start")), year(args.get("end")))
@@ -280,6 +344,16 @@ class Analyst:
             return {"error": f"unknown tool {name}"}
         except Exception as e:  # bad arguments, FRED errors: let the model see and recover
             return {"error": f"{type(e).__name__}: {e}"}
+
+    def gdl(self) -> gdl.GDL:
+        if self._gdl is None:
+            self._gdl = gdl.GDL()  # FileNotFoundError (file not saved yet) reaches the model
+        return self._gdl
+
+    def dhs(self) -> dhs.DHS:
+        if self._dhs is None:
+            self._dhs = dhs.DHS()
+        return self._dhs
 
     def longrun(self) -> longrun.LongRun:
         if self._longrun is None:
@@ -388,7 +462,7 @@ class Analyst:
                     args, result = {}, {"error": "arguments were not valid JSON"}
                 else:
                     result = self._call(name, args)
-                    if name not in ("search_papers", "search_literature"):
+                    if name not in ("search_papers", "search_literature", "search_evaluations"):
                         self._structured.append(json.dumps(result))
                 shown = ", ".join(f"{k}={v!r}" for k, v in args.items())
                 print(f"  → {name}({shown})\n      {_summary(name, result)}", flush=True)

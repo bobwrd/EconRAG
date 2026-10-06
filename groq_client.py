@@ -26,7 +26,7 @@ OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-oss-120b")
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 # Groq errors that won't clear within a short wait: hand the request to OpenRouter.
-BACKUP_AFTER_WAIT = 120  # seconds; per-minute limits (retry-after under this) are waited out
+BACKUP_AFTER_WAIT = 10  # seconds; only short per-minute waits stay on Groq, longer ones go to OpenRouter
 last_provider = "groq"   # which service answered the latest request
 _groq_blocked_until = 0.0  # after a daily-cap 429, skip Groq until then
 
@@ -64,7 +64,8 @@ def post(payload: dict, stream: bool = False) -> requests.Response:
                 raise
             # don't retry Groq on every request until the daily cap clears
             _groq_blocked_until = time.time() + (e.retry_after or 15 * 60)
-            print(f"  (Groq unavailable: {str(e)[:80]} — using OpenRouter {OPENROUTER_MODEL})", flush=True)
+            why = "rate limit" if e.retry_after and "per day" not in str(e) else str(e)[:80]
+            print(f"  (Groq {why}: switching to OpenRouter {OPENROUTER_MODEL})", flush=True)
     response = _post(OPENROUTER_URL, OPENROUTER_API_KEY, OPENROUTER_MODEL,
                      # only route to OpenRouter providers that support every parameter sent (tools)
                      {**payload, "provider": {"require_parameters": True}}, stream, "OpenRouter")

@@ -474,18 +474,58 @@ def draw_svg(spec: dict) -> str:
     return ""  # maps and animations need Ask
 
 
-def auto(results: list[tuple[str, dict, dict]], out_dir: Path = OUT_DIR, wb=None, use_ask: bool | None = None) -> list[Path]:
-    """Draws a chart for every tool result worth drawing; returns the file paths.
+# ---------------------------------------------------------------- when to draw
+# Charts only when the data is the point of the question (plain word rules, no
+# tokens): a trend for "since/over time", bars and maps for "which/top/rank",
+# regional bars for "across regions/states", comparisons for "compare/vs".
+# Explanations ("why", "what can you tell me") get none unless they ask for one.
+ASKS_CHART = re.compile(r"\b(chart|plot|graph|visuali[sz]e|map|show me)\b", re.I)
+WANTS = {
+    "time": re.compile(r"\b(trend|over time|since|changed?|growth|grew|history|historical|decades?|"
+                       r"evolv\w*|(?:19|20)\d\d)\b", re.I),
+    "rank": re.compile(r"\b(which|top|highest|lowest|rank\w*|most|least|best|worst|largest|smallest)\b", re.I),
+    "regions": re.compile(r"\b(regions?|regional|states?|provinces?|count(?:y|ies)|districts?|across|"
+                          r"within|vary|varies|variation|where)\b", re.I),
+    "compare": re.compile(r"\b(compare\w*|comparison|vs\.?|versus|than|between|relative|peers?|differ\w*)\b", re.I),
+    "sources": re.compile(r"\b(sources? of growth|growth accounting|tfp|productivity|capital)\b", re.I),
+}
+# which question intents justify each kind of chart
+CHART_INTENTS = {"line": ("time", "compare"), "map": ("rank", "compare", "regions"), "bubble": ("time", "compare"),
+                 "bar": ("rank", "regions", "compare", "sources"), "grouped_bar": ("compare", "regions")}
+last_specs: list[dict] = []  # the specs auto() drew last time (the analyst remembers their keys)
+
+
+def wanted(spec: dict, question: str | None) -> bool:
+    if question is None or ASKS_CHART.search(question):
+        return True
+    return any(WANTS[i].search(question) for i in CHART_INTENTS.get(spec["kind"], ()))
+
+
+def spec_key(spec: dict) -> str:
+    """Identifies a chart by what it shows, to skip repeats across follow-up questions."""
+    import hashlib
+    import json
+    body = {k: v for k, v in spec.items() if k not in ("slug",)}
+    return hashlib.sha1(json.dumps(body, sort_keys=True, default=str).encode()).hexdigest()
+
+
+def auto(results: list[tuple[str, dict, dict]], out_dir: Path = OUT_DIR, wb=None, use_ask: bool | None = None,
+         question: str | None = None, previous: set[str] | None = None) -> list[Path]:
+    """Draws the charts worth drawing for this question; returns the file paths.
     Ask (vendor/ask) draws PNGs, maps, and the bubble animation; otherwise SVG."""
+    global last_specs
     use_ask = ask_available() if use_ask is None else use_ask
     specs = [s for name, args, result in results for s in specs_for(name, args, result)]
-    if use_ask:
+    if use_ask and (question is None or WANTS["time"].search(question) or WANTS["compare"].search(question)
+                    or ASKS_CHART.search(question)):
         try:
             bubble = bubble_spec(results, wb)
         except Exception:  # a failed data request shouldn't cost the other charts
             bubble = None
         if bubble:
             specs.append(bubble)
+    specs = [s for s in specs if wanted(s, question) and spec_key(s) not in (previous or set())]
+    last_specs = specs
     if not specs:
         return []
     out_dir.mkdir(exist_ok=True)

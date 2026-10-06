@@ -76,13 +76,13 @@ Rules:
 1. Every number and every factual claim about a place or trend must come from a tool result in this conversation — if you didn't fetch it, don't assert it. For correlations, use the tool's "interpretation" for the direction. You may do simple arithmetic on those numbers (differences, ratios); show it. Your answer is automatically checked: numbers not found in tool results are flagged to the user.
 2. For "why" or "what explains" questions about places, combine the county data with search_papers. Build the local part ONLY from county_profile's characteristics_consistent_with_gap (computed: differs notably from average AND correlates with mobility). A characteristic marked "about average" cannot explain a gap — mention it only to rule it out; also say which characteristics point the other way. Say "is consistent with" / "is associated with", never "because", "due to", or "largely explains" — unless a search_papers passage makes that causal claim, then attribute it to the paper.
 3. Mention a paper or research finding ONLY if it appeared in a search_papers, search_literature, or search_evaluations result in this conversation; if you didn't search, don't cite research. Cite inline: for library passages, the author-year their label gives, e.g. (Chetty, Hendren, Kline, Saez and Turner (2014)) or (Chetty et al. (2014)), the result's cite_as form, e.g. (Banerjee et al. (2015)), for search_literature, (J-PAL: <title>) for search_evaluations, (Opportunity Atlas) for county data, (World Bank: <indicator id>, <year>) and (FRED: <series id>, <date>) for data. Never invent paper titles, authors, years, table numbers, or figure numbers — citations are automatically checked against the passages and against OpenAlex.
-4. Earlier turns are context for follow-ups ("there", "what about..."); a self-contained question is about the US unless it names a place. If a county lookup is ambiguous and the question doesn't make the right one obvious, ask the user which one they mean.
+4. Earlier turns are context for follow-ups ("there", "what about...", "these results"): build on your previous answer — explain, interpret, or extend it; don't repeat its table or re-fetch data it already gave. A self-contained question is about the US unless it names a place. If a county lookup is ambiguous and the question doesn't make the right one obvious, ask the user which one they mean.
 5. If the tools don't contain the answer, say so plainly instead of filling the gap.
 6. Call independent tools together in the same turn rather than one per turn. Don't repeat a search with near-identical wording.
 7. To compare episodes (e.g. two recessions), call get_data once per episode's date range: max and min are exact only for the range requested; sampled points can miss peaks.
 8. The first time you use the Opportunity Atlas mobility measure, explain it plainly, e.g. "children from low-income families (parents at the 25th income percentile) who grew up in Cook County reached, on average, the 38.5th percentile of household income as adults" — these are children born 1978-83, with incomes measured in 2014-15.
 9. A yes/no, above/below, or more/less question gets an explicit answer in the first sentence ("Below: ..."; if it differs by measure, e.g. market rates vs PPP, give the answer for each).
-10. Be concise — under 250 words: the direct answer first, then the supporting numbers, then brief context. Use short bullets or a small table for comparisons. Output is shown in a terminal: plain text and simple markdown only. You may include a sparkline string from get_data as a mini chart."""
+10. Answer first, in plain prose: the explanation, the mechanisms, what research finds. Data supports the answer: cite the 2-4 figures that matter, inline. Use a table only when the user asks for a list or ranking, or many numbers are the point. Be concise — under 250 words. Output is shown in a terminal: plain text and simple markdown only."""
 
 # Kept terse: the schemas are re-sent with every request (see MAX_RATE_LIMIT_WAIT).
 # Metric descriptions appear once, in rank_counties; results carry them too.
@@ -275,6 +275,7 @@ class Analyst:
         self._longrun = None  # loaded on first use: most questions don't need it
         self._jpal = None
         self._dhs = None
+        self._chart_keys: set[str] = set()  # charts drawn for the previous question
         self._gdl = None
         self.history: list[dict] = []
         self.last_tokens = 0  # Groq tokens used by the latest run() (free tier: 200K/day)
@@ -422,13 +423,18 @@ class Analyst:
     def _check(self, answer: str) -> tuple[list[str], list[str]]:
         passages = "\n".join(self._passages)
         citations = []
-        for c in verify.unsupported_citations(answer, passages, self._sources):
+        prior = "\n".join(m["content"] for m in self.history if m["role"] == "assistant")
+        for c in verify.unsupported_citations(answer, passages + "\n" + prior, self._sources):
             found = None if c.endswith(".pdf") else openalex.check_citation(c)
             # "real but not consulted" and "no such paper" need different fixes
             citations.append(c if found is None else
                              f"{c} [real paper, but no tool returned it]" if found["exists"] else
                              f"{c} [no matching publication exists in OpenAlex — likely invented]")
-        return verify.unsupported_numbers(answer, "\n".join(self._structured), passages), citations
+        # numbers and citations from the previous answers count too: they were checked (or
+        # flagged) when first given, and follow-ups reuse them ("what about these results?")
+        prior = "\n".join(m["content"] for m in self.history if m["role"] == "assistant")
+        return (verify.unsupported_numbers(answer, "\n".join(self._structured + [prior]), passages),
+                citations)
 
     def run(self, question: str) -> str:
         self._reset_evidence()
@@ -471,7 +477,10 @@ class Analyst:
                 print(f"\nAnswer:\n{answer}")
                 if numbers or citations:
                     print(f"\n  ⚠ Not verified against tool results: {', '.join(numbers + citations)}")
-                self.last_charts = charts.auto(self._results, wb=self.wb)  # plain Python: no tokens
+                # plain Python, no tokens; only when the data is the point, and no repeats
+                self.last_charts = charts.auto(self._results, wb=self.wb, question=question,
+                                               previous=self._chart_keys)
+                self._chart_keys = {charts.spec_key(s) for s in charts.last_specs}
                 for path in self.last_charts:
                     print(f"  Chart: {path}")
                 self.remember(question, answer)

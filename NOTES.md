@@ -309,8 +309,13 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
    so questions take ~30-120s of rate-limit waits; a single request over 8K fails outright
    (HTTP 413). Hence: terse tool schemas (~1.6K tokens), compact Atlas output, ~1.8K tokens
    of passages per paper search (`AGENT_PAPERS_CTX`) with already-shown chunks skipped,
-   `_fit()` trimming old tool results under `REQUEST_TOKEN_LIMIT`, and waits of up to 60s on
-   429 (`MAX_RATE_LIMIT_WAIT`) instead of falling back. Groq's paid Dev tier lifts this.
+   `_fit()` trimming old tool results under `REQUEST_TOKEN_LIMIT`. Rate limits (Oct 2026): a
+   per-minute 429 asking for <=10s is waited out on Groq; anything longer, the daily cap, or an
+   outage sends requests to OpenRouter (`groq_client.BACKUP_AFTER_WAIT`; free Nemotron model
+   by default, verified to accept our tools and parameters) until Groq's limit clears — waiting
+   it out made one follow-up take ~4 minutes and run out of tool rounds.
+   Follow-ups: numbers and citations in the last two answers count as evidence for verify.py
+   (re-flagging them once sent the model into re-fetching and repeating its previous table). Groq's paid Dev tier lifts this.
 8. **gpt-oss-120b fabricates despite instructions**: in testing it cited real-sounding papers
    no search returned (and cited research without searching at all), computed "employment
    rate" as 100 − unemployment, read r = −0.44 as a positive relationship, and read a

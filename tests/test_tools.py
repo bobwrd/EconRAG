@@ -497,20 +497,33 @@ def test_openrouter_backup_only_for_long_groq_outages():
     saved = (gc._session.post, gc.OPENROUTER_API_KEY, gc._groq_blocked_until)
     gc._session.post, gc.OPENROUTER_API_KEY, gc._groq_blocked_until = fake_post, "test-key", 0.0
     try:
-        replies = [Resp(429, {"error": {"message": "Rate limit ... tokens per minute"}}, "20")]
+        replies = [Resp(429, {"error": {"message": "Rate limit ... tokens per minute"}}, "6")]
         try:
             gc.post({"messages": []})
-            raise AssertionError("a per-minute limit should be waited out, not sent to OpenRouter")
+            raise AssertionError("a short (<=10s) per-minute wait should stay on Groq")
         except gc.GroqUnavailable:
             pass
+        replies = [Resp(429, {"error": {"message": "Rate limit ... tokens per minute"}}, "25")]
+        assert gc.post({"messages": []}).json()["choices"][0]["message"]["content"] == "ok"  # longer: switch
+        gc._groq_blocked_until = 0.0
         replies = [Resp(429, {"error": {"message": "Rate limit ... tokens per day (TPD)"}}, "700")]
         assert gc.post({"messages": []}).json()["choices"][0]["message"]["content"] == "ok"
         assert gc.last_provider == "openrouter" and calls[-1] == (gc.OPENROUTER_URL, gc.OPENROUTER_MODEL)
         gc.post({"messages": []})  # Groq is skipped while its daily cap lasts
-        assert [u for u, _ in calls].count(gc.GROQ_URL) == 2, calls
+        assert [u for u, _ in calls].count(gc.GROQ_URL) == 3, calls
     finally:
         gc._session.post, gc.OPENROUTER_API_KEY, gc._groq_blocked_until = saved
         gc.last_provider = "groq"
+
+
+def test_followups_may_reuse_numbers_from_previous_answers():
+    bot = _bot()
+    bot.history = [{"role": "user", "content": "Which countries are poorest?"},
+                   {"role": "assistant", "content": "DRC 85.3% (2020), Mozambique 81.4% (2022) (Banerjee et al. (2015))."}]
+    numbers, citations = bot._check("As noted, the DRC's 85.3% rate (Banerjee et al. (2015)) reflects conflict.")
+    assert numbers == [] and citations == [], (numbers, citations)
+    assert bot._check("The DRC's rate is 91.2%.")[0] == ["91.2"]  # new numbers are still checked
+    assert "these results" in analyst.SYSTEM_PROMPT and "Answer first, in plain prose" in analyst.SYSTEM_PROMPT
 
 
 # ------------------------------------------------------------------ benchmark scorer

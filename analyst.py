@@ -29,6 +29,8 @@ import time
 import fred
 import openalex
 import verify
+import charts
+import compute
 import dhs
 import gdl
 import jpal
@@ -56,6 +58,7 @@ Answer from your tools, not from memory:
 - search_papers: the user's research library (mostly Opportunity Insights research: intergenerational mobility, neighborhoods, credit access, migration, the Economic Tracker) — full-text passages. Use it for research findings, mechanisms, and "why" questions on those topics.
 - search_literature: published research beyond the library (OpenAlex, ~250M papers): real papers with authors, year, venue, citation count, and abstract. Use it for "what does research say" / "what works" questions the library doesn't cover — most development topics (cash transfers, microfinance, deworming, ...). Search with the topic's standard terms; you only see abstracts, so claim no more than an abstract states.
 - search_evaluations: J-PAL's summaries of ~1,100 randomized evaluations (mostly in developing countries) with their results. Use it with search_literature for "what works" / "does X work" questions; say where and when each study ran.
+- run_python: calculations the other tools don't do (growth needed to reach a target, projections, regressions, population-weighted averages, convergence). List the data in `data`; the script gets DATA[series][ISO3] = {year: value} (FRED under "US"), NAMES, devecon (cagr, doubling_time, weighted_mean, gini, fgt, beta_convergence, growth_decomposition), np, scipy.stats. print() every number you will cite, with a label.
 - county_profile / rank_counties / correlate_counties: the Opportunity Atlas (every US county). Use them for questions about specific places, comparisons between places, or which local characteristics go with mobility. For a city, use its main county (Chicago -> Cook County, IL) and say so.
 - search_data / get_data: source "worldbank" (default) = World Development Indicators, ~1,500 indicators for ~217 economies plus regions and income groups (e.g. "Sub-Saharan Africa", "Low income") — growth, poverty, inequality, health, education, labor, trade — plus World Bank GDP growth FORECASTS (search "growth forecast"). Present forecasts as forecasts, with the edition date the result gives. Use countries ["all"] to rank every economy. Source "fred" = US and high-frequency series (monthly unemployment, CPI); for inflation from a price index use units "pc1": the raw index is a level, not a rate. Source "longrun" = history before WDI: Maddison GDP per capita back to year 1 (mpd.gdppc, 2011 int$) and Penn World Table output, capital, schooling, TFP since 1950; 2+ countries also returns ratios, overtaking and divergence years; series pwt.growth_accounting splits growth per worker into capital, schooling and TFP. Source "dhs" = Demographic and Health Surveys, ~90 developing countries, one value per survey every ~5 years (child mortality, stunting, fertility, contraception, maternal care, vaccination, schooling, water, HIV, women's empowerment); regions true for subnational values; always state the survey year. Source "gdl" = Global Data Lab subnational HDI, life expectancy, schooling, GNI per capita (2021 PPP) for 1,805 regions in 188 countries, 1990-2023: every region of a country, or ["all"] to rank regions worldwide; metrics take f/m for female/male (lifexpf). Search first unless you know the exact id.
 
@@ -103,8 +106,15 @@ TOOLS = [
           "passages labeled with source file.", {"query": {"type": "string"}}, ["query"]),
     _tool("search_literature", "Search published research (OpenAlex): real papers with abstracts.",
           {"query": {"type": "string"}, "from_year": {"type": "integer", "description": "optional"}}, ["query"]),
-    _tool("search_evaluations", "Search J-PAL randomized evaluation summaries (intervention, country, results).",
+    _tool("search_evaluations", "Search J-PAL randomized evaluations.",
           {"query": {"type": "string"}}, ["query"]),
+    _tool("run_python", "Run Python on fetched data (sandboxed).",
+          {"code": {"type": "string"},
+           "data": {"type": "array", "items": {"type": "object", "properties": {
+               "source": {"type": "string", "enum": list(compute.SOURCES)},
+               "series": {"type": "string"}, "countries": {"type": "array", "items": {"type": "string"}},
+               "start": {"type": "string"}, "end": {"type": "string"}}, "required": ["series"]}}},
+          ["code"]),
     _tool("county_profile", "Opportunity Atlas profile of one US county: upward mobility and "
           "incarceration for kids from low-income families (overall/by race/by gender) vs state and "
           "national averages, plus county characteristics.",
@@ -150,6 +160,9 @@ def _summary(name: str, result: dict) -> str:
         return f"error: {result['error']}"
     if name == "search_literature":
         return "; ".join(w["cite_as"] for w in result["papers"]) or "no papers found"
+    if name == "run_python":
+        out = (result.get("output") or "").strip().splitlines()
+        return ("; ".join(out[:3]) + (" ..." if len(out) > 3 else "")) or result.get("note", "")
     if name == "search_evaluations":
         return "; ".join(f"{e['title']} ({', '.join(e['countries']) or '?'})" for e in result["evaluations"]) \
             or "no evaluations found"
@@ -273,6 +286,7 @@ class Analyst:
         self._passages: list[str] = []     # paper text (numbers/citations must match directly)
         self._sources: set[str] = set()
         self._seen_chunks: set[int] = set()
+        self._results: list[tuple[str, dict, dict]] = []  # every tool call this question, for charts
 
     def _call(self, name: str, args: dict) -> dict:
         try:
@@ -300,6 +314,12 @@ class Analyst:
                                    for e in result["evaluations"]]
                 self._sources |= {e["cite_as"] for e in result["evaluations"]}
                 return result
+            if name == "run_python":
+                specs = args.get("data") or []
+                sources = {s.get("source", "worldbank") for s in specs}
+                return compute.run_python(args["code"], specs, self.wb,
+                                          self.longrun() if "longrun" in sources else None,
+                                          self.gdl() if "gdl" in sources else None)
             if name == "county_profile":
                 return self.atlas.county_profile(args["county"], args.get("state"),
                                                  bool(args.get("demographics")))
@@ -451,6 +471,9 @@ class Analyst:
                 print(f"\nAnswer:\n{answer}")
                 if numbers or citations:
                     print(f"\n  ⚠ Not verified against tool results: {', '.join(numbers + citations)}")
+                self.last_charts = charts.auto(self._results)  # plain Python: no tokens
+                for path in self.last_charts:
+                    print(f"  Chart: {path}")
                 self.remember(question, answer)
                 return answer
             messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls})
@@ -462,6 +485,7 @@ class Analyst:
                     args, result = {}, {"error": "arguments were not valid JSON"}
                 else:
                     result = self._call(name, args)
+                    self._results.append((name, args, result))
                     if name not in ("search_papers", "search_literature", "search_evaluations"):
                         self._structured.append(json.dumps(result))
                 shown = ", ".join(f"{k}={v!r}" for k, v in args.items())

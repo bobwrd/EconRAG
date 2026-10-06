@@ -12,3 +12,6 @@ data/
 # local scratch and pasted third-party chatbot answers
 x
 eval/external/
+
+# charts drawn after each answer
+charts/

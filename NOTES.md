@@ -167,6 +167,11 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
   measures, Gini/Lorenz/Palma, population-weighted group means with coverage, growth
   decomposition, beta/sigma convergence). Not yet a tool; meant for the Phase 2 sandbox.
 - `PAPER_PROPOSAL.md` — 15 open-access development papers proposed for `docs/`, awaiting approval.
+- `charts.py` — SVG charts drawn after each answer from the tool results (no model, no
+  tokens): lines for time series, bars for regions/rankings; saved in `charts/` (gitignored).
+- `compute.py` — the `run_python` tool: fetches the requested series with the existing
+  modules, then runs the model's script under `sandbox-exec` (no network, no writes outside its
+  temp folder, CPU/time/output limits). Personal use only — not safe for other users as-is.
 - `dhs.py` — DHS Program API (open, no key): household-survey indicators for ~90 countries,
   `source="dhs"`; headline value = the API's `IsPreferred` row; `regions=true` for subnational
   values (trimmed to the top/bottom 6 in analyst.py). DHS country codes are not ISO2 (India =

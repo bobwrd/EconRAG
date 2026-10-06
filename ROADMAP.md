@@ -33,7 +33,7 @@ won't change. This project wins on what they can't do reliably:
 |---|---|
 | 0. Measure | Done. Baseline 27/30 on `main`; benchmark now 45 questions, re-run on `after-benchmark` pending |
 | 1. Core data | Done except Our World in Data series beyond Maddison |
-| 2. Computation | Helper library done (`devecon.py`); `run_python` tool and charts not started |
+| 2. Computation | Done: `run_python` (sandboxed), `devecon.py`, automatic charts (no tokens) |
 | 3. Literature | Done: development library (15 papers), OpenAlex + citation checks, J-PAL's 1,318 evaluation summaries. 3ie not usable (no public API) |
 | 4. Long-run / subnational | Done: Maddison, Penn World Table 11.0, DHS surveys (with regions), Global Data Lab subnational HDI; other agencies deferred |
 | 5. Workflows | Not started |
@@ -108,15 +108,23 @@ retrieval code), `get_data(source, series, countries, years)` → computed stats
 
 ## Phase 2: Computation sandbox
 
-- [ ] `run_python` tool: the model writes pandas/statsmodels code over fetched data
-      (cross-country regressions, convergence, growth decompositions). Runs in a subprocess
-      with no network, a time limit, and an output-size cap. Fine for personal use; **not**
-      safe to expose to other users as-is.
+- [x] `run_python` tool (`compute.py`, Oct 2026): the model lists the data it needs
+      (worldbank / longrun / gdl / fred specs) and a script; Python fetches the data, then runs
+      the script under macOS `sandbox-exec` — no network, writes only to its temp folder, 10s
+      CPU / 15s wall clock, 3,000-character output cap. The script gets `DATA[series][ISO3] =
+      {year: value}`, `devecon`, numpy, scipy.stats (no pandas/statsmodels: not installed, not
+      needed so far). Fine for personal use; **not** a security boundary for other users —
+      before a public UI (Phase 6), move it into a container or VM.
 - [x] `devecon.py` helper library (28 tests, no network), built Oct 2026; not yet exposed as a tool: PPP conversion, constant-price rebasing, CAGR,
       poverty gap / squared gap, Gini and Lorenz from distributions, per-capita, income-group
       averages (population-weighted vs simple), latest-available-year logic.
-- [ ] Charts saved as PNG with source notes; numbers computed in the sandbox are fed to
-      `verify.py` so they count as verified.
+- [x] Numbers the script prints count as tool results for `verify.py` (automatic: every
+      non-passage tool result is evidence).
+- [x] Charts (`charts.py`, Oct 2026), drawn by plain Python — not a model tool, so no tokens
+      and nothing added to requests (tool schemas are at their 2,000-token budget: 1,994).
+      After each answer, every time series fetched (World Bank, FRED, long-run, DHS surveys)
+      becomes a line chart and every regional breakdown or ranking (Global Data Lab, DHS) a bar
+      chart, saved as SVG in `charts/` with the source written on it.
 
 ## Phase 3: Literature and evidence
 

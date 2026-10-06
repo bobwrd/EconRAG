@@ -30,6 +30,15 @@ in the answer traces back to what was actually retrieved.
 - **OpenAlex**: published research beyond the library (~250M works), also used to check
   that cited papers exist
 
+For calculations the tools don't cover (growth needed to reach a target, projections,
+regressions, population-weighted averages), the model can write a short Python script that
+runs on the fetched data in a sandbox with no network access; its printed numbers are
+fact-checked like any other.
+
+Each answer also comes with charts of the data it used — time series as line charts, regions
+and rankings as bar charts — drawn by plain Python (no model) and saved in `charts/` as SVG
+files that open in any browser.
+
 Economics conventions are enforced in code, not left to the model: poverty figures carry
 their survey year and the current $3.00/day (2021 PPP) line, GDP per capita comes with both
 market-rate and PPP values, current vs constant prices are flagged, newer data is flagged
@@ -95,6 +104,7 @@ OPENROUTER_MODEL=...    # optional; default openai/gpt-oss-120b (paid, ~1,600 qu
 .venv/bin/python tests/test_dhs.py               # DHS surveys (live API)
 .venv/bin/python tests/test_jpal.py              # J-PAL evaluations
 .venv/bin/python tests/test_gdl.py               # Global Data Lab
+.venv/bin/python tests/test_compute.py           # run_python sandbox
 
 .venv/bin/python eval/benchmark.py run NAME                # 45-question benchmark (resumable;
                                                            # ~2 days of Groq's free tier)

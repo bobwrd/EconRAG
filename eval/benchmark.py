@@ -28,8 +28,10 @@ headings, each followed by the pasted answer.
 """
 
 import contextlib
+import csv
 import io
 import json
+import math
 import re
 import sys
 import time
@@ -75,6 +77,16 @@ def wb_latest(indicator: str, country: str) -> tuple[float, str, str]:
     return row["value"], row["date"], row["indicator"]["value"]
 
 
+def wb_value(indicator: str, country: str, year: int) -> float:
+    r = requests.get(WB_URL.format(country=country, indicator=indicator),
+                     params={"format": "json", "date": year}, timeout=30)
+    r.raise_for_status()
+    value = r.json()[1][0]["value"]
+    if value is None:
+        raise ValueError(f"no {indicator} for {country} in {year}")
+    return value
+
+
 def compute_truth(q: dict) -> dict | None:
     t = q.get("truth")
     if not t:
@@ -83,6 +95,47 @@ def compute_truth(q: dict) -> dict | None:
     if kind == "wb":
         value, year, name = wb_latest(t["indicator"], t["country"])
         return {"values": [value], "year": year, "label": f"{name}, {year}"}
+    if kind == "wb_cagr":  # annual growth between two years, % (or doubling time in years)
+        a, b = (wb_value(t["indicator"], t["country"], y) for y in (t["from"], t["to"]))
+        g = (b / a) ** (1 / (t["to"] - t["from"])) - 1
+        if t.get("doubling"):
+            years = math.log(2) / math.log(1 + g)
+            return {"values": [years], "label": f"{t['indicator']} {t['from']}-{t['to']}: {g:.2%}/yr -> doubles in {years:.1f}y"}
+        return {"values": [100 * g], "label": f"{t['indicator']} {t['country']} {t['from']}->{t['to']}: {a:.0f}->{b:.0f}"}
+    if kind == "wb_ratio":  # a / b in the latest year both have
+        (va, ya, name), (vb, yb, _) = wb_latest(t["indicator"], t["a"]), wb_latest(t["indicator"], t["b"])
+        if ya != yb:
+            year = min(int(ya), int(yb))
+            va, vb, ya = wb_value(t["indicator"], t["a"], year), wb_value(t["indicator"], t["b"], year), str(year)
+        return {"values": [va / vb], "label": f"{name} {t['a']} {va:.0f} / {t['b']} {vb:.0f} ({ya}) = {va / vb:.2f}"}
+    if kind == "wb_weighted":  # population-weighted mean over countries, in one year
+        vals = [(wb_value(t["indicator"], c, t["year"]), wb_value("SP.POP.TOTL", c, t["year"])) for c in t["countries"]]
+        mean = sum(v * w for v, w in vals) / sum(w for _, w in vals)
+        simple = sum(v for v, _ in vals) / len(vals)
+        return {"values": [mean], "label": f"{t['indicator']} {t['year']} weighted {mean:.2f} (simple {simple:.2f})"}
+    if kind == "wb_multi":  # every country's latest value must appear
+        rows = [wb_latest(t["indicator"], c) for c in t["countries"]]
+        return {"values": [v for v, _, _ in rows], "all_required": True,
+                "label": "; ".join(f"{c} {v:.1f} ({y})" for c, (v, y, _) in zip(t["countries"], rows))}
+    if kind.startswith("mpd"):  # Maddison, read straight from the converted file (not via longrun.py)
+        with open(ROOT / "data/longrun/maddison.csv") as f:
+            gdppc = {(r["code"], int(r["year"])): float(r["gdppc"]) for r in csv.DictReader(f) if r["gdppc"]}
+        last = lambda c: max(y for code, y in gdppc if code == c)  # noqa: E731
+        point = lambda c, y: gdppc[c, last(c) if y == "latest" else y]  # noqa: E731
+        if kind == "mpd":  # every (country, year) value must appear
+            pts = [(c, last(c) if y == "latest" else y) for c, y in t["points"]]
+            return {"values": [gdppc[p] for p in pts], "all_required": True,
+                    "label": "; ".join(f"{c} {y} {gdppc[c, y]:.0f}" for c, y in pts)}
+        if kind == "mpd_ratio":
+            (c1, y1), (c0, y0) = t["of"], t["to"]
+            v = point(c1, y1) / point(c0, y0)
+            return {"values": [v], "label": f"{c1} {y1} / {c0} {y0} = {v:.2f}"}
+        if kind == "mpd_cross":  # first year from which `a` stays above `b`
+            a, b = t["a"], t["b"]
+            years = sorted(y for c, y in gdppc if c == a and (b, y) in gdppc)
+            below = [y for y in years if gdppc[a, y] <= gdppc[b, y]]
+            year = next(y for y in years if y > max(below))
+            return {"values": [], "must": [str(year)], "label": f"{a} above {b} from {year}"}
     import fred
     if kind == "fred_latest":
         s = fred.series_stats(t["series"], units=t.get("units", "lin"))

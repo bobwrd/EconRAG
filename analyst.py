@@ -23,11 +23,13 @@ fall back to the local pipeline.
 
 import datetime
 import json
+from pathlib import Path
 import time
 
 import fred
 import openalex
 import verify
+import longrun
 import worldbank
 from atlas import CORRELATE_METRICS, GENDERS, METRICS, RACES, Atlas
 from groq_client import GroqUnavailable
@@ -51,7 +53,7 @@ Answer from your tools, not from memory:
 - search_papers: the user's research library (mostly Opportunity Insights research: intergenerational mobility, neighborhoods, credit access, migration, the Economic Tracker) — full-text passages. Use it for research findings, mechanisms, and "why" questions on those topics.
 - search_literature: published research beyond the library (OpenAlex, ~250M papers): real papers with authors, year, venue, citation count, and abstract. Use it for "what does research say" / "what works" questions the library doesn't cover — most development topics (cash transfers, microfinance, deworming, ...). Search with the topic's standard terms; you only see abstracts, so claim no more than an abstract states.
 - county_profile / rank_counties / correlate_counties: the Opportunity Atlas (every US county). Use them for questions about specific places, comparisons between places, or which local characteristics go with mobility. For a city, use its main county (Chicago -> Cook County, IL) and say so.
-- search_data / get_data: source "worldbank" (default) = World Development Indicators, ~1,500 indicators for ~217 economies plus regions and income groups (e.g. "Sub-Saharan Africa", "Low income") — growth, poverty, inequality, health, education, labor, trade — plus World Bank GDP growth FORECASTS (search "growth forecast"). Present forecasts as forecasts, with the edition date the result gives. Use countries ["all"] to rank every economy. Source "fred" = US and high-frequency series (monthly unemployment, CPI); for inflation from a price index use units "pc1": the raw index is a level, not a rate. Search first unless you know the exact id.
+- search_data / get_data: source "worldbank" (default) = World Development Indicators, ~1,500 indicators for ~217 economies plus regions and income groups (e.g. "Sub-Saharan Africa", "Low income") — growth, poverty, inequality, health, education, labor, trade — plus World Bank GDP growth FORECASTS (search "growth forecast"). Present forecasts as forecasts, with the edition date the result gives. Use countries ["all"] to rank every economy. Source "fred" = US and high-frequency series (monthly unemployment, CPI); for inflation from a price index use units "pc1": the raw index is a level, not a rate. Source "longrun" = history before WDI: Maddison GDP per capita back to year 1 (mpd.gdppc, 2011 int$) and Penn World Table output, capital, schooling, TFP since 1950; 2+ countries also returns ratios, overtaking and divergence years; series pwt.growth_accounting splits growth per worker into capital, schooling and TFP. Search first unless you know the exact id.
 
 Economics conventions:
 - "Employment rate" means the employment-population ratio (FRED EMRATIO), NOT 100 minus the unemployment rate (the unemployed are only those looking for work). Labor force participation is CIVPART.
@@ -60,25 +62,27 @@ Economics conventions:
 - Poverty and inequality figures come from household surveys: give the survey year with every value, and never present an old survey as "today". The international (extreme) poverty line is $3.00/day in 2021 PPP (SI.POV.DDAY) — older sources used $2.15 (2017 PPP) or $1.90; figures on different lines aren't comparable.
 - GDP per capita: say whether it's at market exchange rates (current US$) or PPP (international $). If the question doesn't specify and the answer depends on it, give both. Growth over time: constant-price (.KD) series, not current-price (.CD).
 - Every value has its own latest year, which can differ across countries: always state the year.
+- Comparisons with peers ("vs similar countries", "vs Sub-Saharan Africa"): get_data with peers true.
 - Don't present a county's racial composition as an explanation for its outcomes. The research attributes racial gaps to factors like segregation, discrimination, and neighborhood conditions: report what the papers say.
 
 Rules:
 1. Every number and every factual claim about a place or trend must come from a tool result in this conversation — if you didn't fetch it, don't assert it. For correlations, use the tool's "interpretation" for the direction. You may do simple arithmetic on those numbers (differences, ratios); show it. Your answer is automatically checked: numbers not found in tool results are flagged to the user.
 2. For "why" or "what explains" questions about places, combine the county data with search_papers. Build the local part ONLY from county_profile's characteristics_consistent_with_gap (computed: differs notably from average AND correlates with mobility). A characteristic marked "about average" cannot explain a gap — mention it only to rule it out; also say which characteristics point the other way. Say "is consistent with" / "is associated with", never "because", "due to", or "largely explains" — unless a search_papers passage makes that causal claim, then attribute it to the paper.
-3. Mention a paper or research finding ONLY if it appeared in a search_papers or search_literature result in this conversation; if you didn't search, don't cite research. Cite inline: (paper: <filename>) for library passages, the result's cite_as form, e.g. (Banerjee et al. (2015)), for search_literature, (Opportunity Atlas) for county data, (World Bank: <indicator id>, <year>) and (FRED: <series id>, <date>) for data. Never invent paper titles, authors, years, table numbers, or figure numbers — citations are automatically checked against the passages and against OpenAlex.
+3. Mention a paper or research finding ONLY if it appeared in a search_papers or search_literature result in this conversation; if you didn't search, don't cite research. Cite inline: for library passages, the author-year their label gives, e.g. (Chetty, Hendren, Kline, Saez and Turner (2014)) or (Chetty et al. (2014)), the result's cite_as form, e.g. (Banerjee et al. (2015)), for search_literature, (Opportunity Atlas) for county data, (World Bank: <indicator id>, <year>) and (FRED: <series id>, <date>) for data. Never invent paper titles, authors, years, table numbers, or figure numbers — citations are automatically checked against the passages and against OpenAlex.
 4. Earlier turns are context for follow-ups ("there", "what about..."); a self-contained question is about the US unless it names a place. If a county lookup is ambiguous and the question doesn't make the right one obvious, ask the user which one they mean.
 5. If the tools don't contain the answer, say so plainly instead of filling the gap.
 6. Call independent tools together in the same turn rather than one per turn. Don't repeat a search with near-identical wording.
 7. To compare episodes (e.g. two recessions), call get_data once per episode's date range: max and min are exact only for the range requested; sampled points can miss peaks.
 8. The first time you use the Opportunity Atlas mobility measure, explain it plainly, e.g. "children from low-income families (parents at the 25th income percentile) who grew up in Cook County reached, on average, the 38.5th percentile of household income as adults" — these are children born 1978-83, with incomes measured in 2014-15.
-9. Be concise — under 250 words: the direct answer first, then the supporting numbers, then brief context. Use short bullets or a small table for comparisons. Output is shown in a terminal: plain text and simple markdown only. You may include a sparkline string from get_data as a mini chart."""
+9. A yes/no, above/below, or more/less question gets an explicit answer in the first sentence ("Below: ..."; if it differs by measure, e.g. market rates vs PPP, give the answer for each).
+10. Be concise — under 250 words: the direct answer first, then the supporting numbers, then brief context. Use short bullets or a small table for comparisons. Output is shown in a terminal: plain text and simple markdown only. You may include a sparkline string from get_data as a mini chart."""
 
 # Kept terse: the schemas are re-sent with every request (see MAX_RATE_LIMIT_WAIT).
 # Metric descriptions appear once, in rank_counties; results carry them too.
 _race = {"type": "string", "enum": list(RACES)}
 _gender = {"type": "string", "enum": list(GENDERS)}
 _state = {"type": "string", "description": "2-letter abbreviation; omit for all US"}
-_source = {"type": "string", "enum": ["worldbank", "fred"], "description": "default worldbank"}
+_source = {"type": "string", "enum": ["worldbank", "fred", "longrun"], "description": "default worldbank"}
 _metric_doc = ("upward_mobility: avg adult income percentile of kids from 25th-percentile families; "
                "incarceration: % of them incarcerated in 2010. race/gender apply to these two only. "
                "Other metrics are county characteristics, mostly ~2010.")
@@ -119,14 +123,16 @@ TOOLS = [
           {"series": {"type": "string", "description": "id from search_data, e.g. SI.POV.DDAY or UNRATE"},
            "source": _source,
            "countries": {"type": "array", "items": {"type": "string"},
-                         "description": "worldbank: names, ISO3 codes, or regions (max 20); "
+                         "description": "worldbank/longrun: names, ISO3 codes, or regions (max 20); "
                                         "[\"all\"] ranks every economy"},
-           "start": {"type": "string", "description": "worldbank: year; fred: YYYY-MM-DD"},
-           "end": {"type": "string", "description": "worldbank: year; fred: YYYY-MM-DD"},
+           "start": {"type": "string", "description": "worldbank/longrun: year; fred: YYYY-MM-DD"},
+           "end": {"type": "string", "description": "worldbank/longrun: year; fred: YYYY-MM-DD"},
            "units": {"type": "string", "enum": list(fred.UNITS),
                      "description": "fred only. lin=level, pc1/pch=% change vs year ago/previous period"},
            "order": {"type": "string", "enum": ["highest", "lowest"], "description": "with [\"all\"]"},
-           "n": {"type": "integer", "description": "with [\"all\"]: how many, default 10"}},
+           "n": {"type": "integer", "description": "with [\"all\"]: how many, default 10"},
+           "peers": {"type": "boolean", "description": "worldbank: add income-group and region "
+                     "figures and rank within each"}},
           ["series"]),
 ]
 
@@ -158,11 +164,50 @@ def _summary(name: str, result: dict) -> str:
         top = result["ranked"][0] if result["ranked"] else None
         return f"{result['indicator']}: {len(result['ranked'])} of {result['economies_with_data']} economies" + \
             (f", #1 {top['economy']} ({top['value']}, {top['year']})" if top else "")
+    if name == "get_data" and "countries" in result:  # longrun
+        parts = [f"{c['country']} {c['first']['year']} {c['first']['value']} -> {c['last']['year']} {c['last']['value']}"
+                 if "last" in c else f"{c['country']}: no data" for c in result["countries"][:4]]
+        return f"{result['variable']}: " + "; ".join(parts)
+    if name == "get_data" and "capital_share_alpha" in result:  # longrun growth accounting
+        g = result["growth_pct_per_year"]
+        return (f"{result['country']} {result['period']}: output/worker {g['output_per_worker']}%/yr = capital "
+                f"{g['capital_deepening_contribution']} + schooling {g['human_capital_contribution']} + TFP {g['tfp_contribution']}")
     if name == "get_data":
         parts = [f"{e['economy']} {e['latest']['value']} ({e['latest']['year']}) {e.get('sparkline', '')}".strip()
                  if "latest" in e else f"{e['economy']}: no data" for e in result["economies"][:4]]
         return f"{result['indicator']}: " + "; ".join(parts) + (" ..." if len(result["economies"]) > 4 else "")
     return ""
+
+
+# author-year + title per PDF in docs/ (docs/ itself is gitignored); used by ask.py
+PAPERS = json.loads(Path("papers.json").read_text()) if Path("papers.json").exists() else {}
+
+
+def paper_label(source: str) -> str:
+    """How a library passage is labeled for the model: author-year and title
+    from papers.json (so citations are real references), plus the file name."""
+    meta = PAPERS.get(source)
+    return f'{meta["cite"]}, "{meta["title"]}"; file {source}' if meta else source
+
+
+FRED_NEWER_WINDOW = datetime.timedelta(days=3 * 365)
+
+
+def _with_newest_fred(stats: dict, args: dict) -> dict:
+    """If the model passed a recent end date (assuming it's the newest data,
+    as it did with World Bank years), attach the newest observation: one extra
+    request, skipped for older end dates (deliberate history, e.g. 2020)."""
+    try:
+        end = datetime.date.fromisoformat(str(args.get("end"))[:10])
+    except ValueError:
+        return stats
+    if end < datetime.date.today() - FRED_NEWER_WINDOW:
+        return stats
+    newest_date, newest_value = fred.get_latest_observation(args["series"], args.get("units") or "lin")
+    if newest_date > stats["latest"]["date"]:
+        stats["newer_data"] = (f"newest available: {newest_date} = {newest_value} — this result stops at the "
+                               "requested end; use the newest unless the user asked for an earlier period")
+    return stats
 
 
 class Analyst:
@@ -173,6 +218,7 @@ class Analyst:
         self.search_papers = search_papers
         self.atlas = atlas or Atlas()
         self.wb = wb or worldbank.WorldBank()
+        self._longrun = None  # loaded on first use: most questions don't need it
         self.history: list[dict] = []
         self.last_tokens = 0  # Groq tokens used by the latest run() (free tier: 200K/day)
         self._tools_chars = len(json.dumps(TOOLS))
@@ -209,24 +255,46 @@ class Analyst:
             if name == "correlate_counties":
                 return self.atlas.correlate(**args)
             if name == "search_data":
-                fred_source = args.get("source") == "fred"
-                results = fred.search_series(args["query"]) if fred_source else self.wb.search(args["query"])
+                source = args.get("source")
+                results = (fred.search_series(args["query"]) if source == "fred" else
+                           self.longrun().search(args["query"]) if source == "longrun" else
+                           self.wb.search(args["query"]))
                 if not results:
                     return {"results": [], "note": "No series matched. Try 2-3 plain keywords or the other "
                             "source; if two searches find nothing, say the data isn't available."}
                 return {"results": results}
             if name == "get_data":
                 if args.get("source") == "fred":
-                    return fred.series_stats(args["series"], args.get("start"), args.get("end"),
-                                             args.get("units") or "lin")
+                    stats = fred.series_stats(args["series"], args.get("start"), args.get("end"),
+                                              args.get("units") or "lin")
+                    return _with_newest_fred(stats, args)
+                year = lambda v: int(str(v)[:4]) if v else None  # noqa: E731
+                if args.get("source") == "longrun":
+                    return self._get_longrun(args["series"], args.get("countries") or [],
+                                             year(args.get("start")), year(args.get("end")))
                 if not args.get("countries"):
                     return {"error": "worldbank data needs `countries` (names, ISO3 codes, or [\"all\"])"}
-                year = lambda v: int(str(v)[:4]) if v else None  # noqa: E731
                 return self.wb.get(args["series"], args["countries"], year(args.get("start")),
-                                   year(args.get("end")), args.get("order") or "highest", args.get("n") or 10)
+                                   year(args.get("end")), args.get("order") or "highest", args.get("n") or 10,
+                                   bool(args.get("peers")))
             return {"error": f"unknown tool {name}"}
         except Exception as e:  # bad arguments, FRED errors: let the model see and recover
             return {"error": f"{type(e).__name__}: {e}"}
+
+    def longrun(self) -> longrun.LongRun:
+        if self._longrun is None:
+            self._longrun = longrun.LongRun()  # FileNotFoundError (data not downloaded) reaches the model
+        return self._longrun
+
+    def _get_longrun(self, series: str, countries: list[str], start: int | None, end: int | None) -> dict:
+        if not countries:
+            return {"error": "longrun data needs `countries`"}
+        if series.split(".")[-1] == "growth_accounting":
+            return self.longrun().growth_accounting(countries[0], start, end)
+        result = self.longrun().get(series, countries, start, end)
+        if len(countries) > 1:
+            result["comparison"] = self.longrun().compare(series, countries, start, end)
+        return result
 
     def remember(self, question: str, answer: str):
         self.history = (self.history + [{"role": "user", "content": question},

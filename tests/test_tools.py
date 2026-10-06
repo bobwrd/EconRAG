@@ -188,6 +188,48 @@ def test_worldbank_rejects_unknown_indicator():
         pass
 
 
+def test_worldbank_flags_newer_data_than_requested_end():
+    # benchmark: the model passed end=2023 on its own and reported Niger's 2023 fertility, not 2024's
+    r = WB.get("SP.DYN.TFRT.IN", ["Niger"], end=2023)
+    e = r["economies"][0]
+    assert e["latest"]["year"] == 2023
+    year, value = re.match(r"newest available: (\d{4}) = ([\d.]+)", e["newer_data"]).groups()
+    assert int(year) > 2023 and float(value) < e["latest"]["value"]  # fertility falling
+    assert any("newer data exists" in n for n in r["notes"])
+    assert "newer_data" not in WB.get("SP.DYN.TFRT.IN", ["Niger"], end=2015)["economies"][0]  # deliberate history
+    assert "newer_data" not in WB.get("SP.DYN.TFRT.IN", ["Niger"])["economies"][0]
+
+
+def test_worldbank_market_rate_income_carries_ppp():
+    # benchmark: "Is India's GDP per capita above or below $3,000?" got only the market-rate figure
+    r = WB.get("NY.GDP.PCAP.CD", ["India", "Kenya"])
+    for e in r["economies"]:
+        assert e["ppp"]["year"] == e["latest"]["year"] and e["ppp"]["value"] > e["latest"]["value"]
+    assert "NY.GDP.PCAP.PP.CD" in r["notes"][0] and "both" in r["notes"][0]
+    assert "ppp" in WB.get("NY.GNP.PCAP.CD", ["India"])["economies"][0]
+    assert "ppp" not in WB.get("SP.DYN.LE00.IN", ["India"])["economies"][0]
+
+
+def test_worldbank_income_group_aggregates_have_data():
+    # the API returns income groups with an empty ISO3 code; they used to come back empty
+    for name in ("Low income", "lower middle income countries"):
+        assert WB.get("SP.DYN.TFRT.IN", [name], 2020)["economies"][0]["latest"]["year"] >= 2020
+
+
+def test_worldbank_peer_comparison():
+    r = WB.get("NY.GDP.PCAP.CD", ["Kenya"], peers=True)
+    e = r["economies"][0]
+    income, region = e["peers"]["income_group"], e["peers"]["region"]
+    assert (income["group"], region["group"]) == ("Lower middle income", "Sub-Saharan Africa")
+    lmc = WB.get("NY.GDP.PCAP.CD", ["Lower middle income"])["economies"][0]["latest"]
+    assert income["aggregate"] == lmc
+    for g in (income, region):
+        assert 1 <= g["rank"] <= g["of"] and g["of"] >= 30 and 0 <= g["percentile"] <= 100
+        assert g["percentile"] == round(100 * (g["of"] - g["rank"]) / g["of"])  # no ties in GDP per capita
+    assert any("peers" in n for n in r["notes"])
+    assert "peers" not in WB.get("NY.GDP.PCAP.CD", ["Kenya"])["economies"][0]
+
+
 # ------------------------------------------------------------------ openalex (network)
 def test_openalex_search_returns_citable_papers():
     import openalex
@@ -238,12 +280,58 @@ def test_verify_rejects_random_numbers():
     assert passed / len(xs) < 0.15, f"{passed / len(xs):.0%} of random numbers passed"
 
 
+def test_verify_accepts_scale_words():
+    # benchmark false alarm: "≈ 237.5 million" against 237,527,782
+    pop = json.dumps({"latest": {"year": 2025, "value": 237527782}})
+    assert verify.unsupported_numbers("≈ 237.5 million people (237,527,782)", pop, "") == []
+    assert verify.unsupported_numbers("about 0.24 billion", pop, "") == []
+    assert verify.unsupported_numbers("≈ 239.5 million", pop, "") == ["239.5 million"]
+    assert verify.unsupported_numbers("$2.7B", json.dumps({"v": 2.7e9}), "") == []
+
+
+def test_verify_accepts_shown_arithmetic_with_rounding_and_years():
+    # benchmark false alarms: 22.99 (exact ratio 22.980) and 65 (= 2025 - 1960)
+    kenya = json.dumps({"first": {"year": 1960, "value": 102.824}, "latest": {"year": 2025, "value": 2362.861}})
+    answer = "2,362.861 ÷ 102.824 ≈ 22.99, about 23 times; 2025 − 1960 = 65 years"
+    assert verify.unsupported_numbers(answer, kenya, "") == []
+    # the operands must still be shown: neither the ratio nor the span stands alone
+    assert verify.unsupported_numbers("about 22.99 times over 65 years", kenya, "") == ["22.99", "65"]
+    assert verify.unsupported_numbers("2,362.861 ÷ 102.824 ≈ 24.5", kenya, "") == ["24.5"]
+
+
+def test_verify_ignores_numbers_in_names_and_unicode_dates():
+    # benchmark false alarm: "19" from "COVID‑19" (U+2011 hyphen)
+    emratio = json.dumps({"min": {"date": "2020-04-01", "value": 51.2}})
+    answer = "51.2 % (April 2020, the COVID‑19 low; Covid-19; G20; CO2) (FRED: EMRATIO, 2026‑09‑15)"
+    assert verify.unsupported_numbers(answer, emratio, "") == []
+    assert verify.unsupported_numbers("under-5 mortality of 30.5", "{}", "") == ["30.5"]
+
+
+def test_verify_citations_skip_source_tags_and_places():
+    # benchmark false alarm: "Nigeria (2024" labeled a likely-invented paper
+    answer = ("Life expectancy in Nigeria (2024): 54.6 years (World Bank: SP.DYN.LE00.IN, 2024); "
+              "Kenya and Uganda (2023); South Africa (2022); Cook County (2015); (FRED: UNRATE, 2026-09-01); "
+              "Okonjo and Whitfield (2019); Lundberg (2017)")
+    assert verify.unsupported_citations(answer, "", set()) == ["Okonjo and Whitfield (2019", "Lundberg (2017"]
+
+
 def test_verify_citations():
     passages = "Chetty, Raj, and Nathaniel Hendren. 2018 b. The Impacts of Neighborhoods"
     answer = ("Chetty & Hendren 2018 (paper: CreditAccess_Paper.pdf); Chetty et al. (2016); "
               "peak in Feb 2020 (FRED: EMRATIO, 2020-02-01); see fake.pdf")
     assert verify.unsupported_citations(answer, passages, {"CreditAccess_Paper.pdf"}) == \
         ["Chetty et al. (2016", "fake.pdf"]
+
+
+def test_library_passages_are_labeled_with_real_citations():
+    papers = json.loads((ROOT / "papers.json").read_text())
+    assert set(papers) >= {p.name for p in (ROOT / "docs").glob("*.pdf")}, "a PDF in docs/ has no papers.json entry"
+    label = analyst.paper_label("Banerjee_Karlan_Zinman_2015_microcredit.pdf")
+    assert label.startswith('Banerjee, Karlan and Zinman (2015), "Six Randomized'), label
+    passages = f"(from {label}) Microcredit has modestly positive, but not transformative, effects."
+    answer = "Effects were modest (Banerjee et al. (2015)); (Banerjee, Karlan and Zinman (2015)); (Karlan (2015))"
+    assert verify.unsupported_citations(answer, passages, set()) == [], answer
+    assert verify.unsupported_citations("(Duflo (2012))", passages, set()) == ["Duflo (2012"]
 
 
 # ------------------------------------------------------------------ analyst loop (fake Groq)
@@ -336,6 +424,26 @@ def test_analyst_routes_get_data():
     assert r["economies"][0]["code"] == "NGA" and r["economies"][0]["latest"]["year"] == 2024
     assert bot._call("get_data", {"series": "UNRATE", "source": "fred", "start": "2020-01-01",
                                   "end": "2020-12-31"})["max"]["value"] == 14.8
+
+
+def test_analyst_routes_peers_and_fred_newer_data():
+    import datetime
+    bot = _bot()
+    r = bot._call("get_data", {"series": "NY.GDP.PCAP.CD", "countries": ["Kenya"], "peers": True})
+    assert r["economies"][0]["peers"]["income_group"]["group"] == "Lower middle income"
+    # FRED: a recent end date (model assuming it's the newest) gets the newest observation attached
+    recent = (datetime.date.today() - datetime.timedelta(days=400)).isoformat()
+    r = bot._call("get_data", {"series": "UNRATE", "source": "fred", "start": "2024-01-01", "end": recent})
+    newest = re.match(r"newest available: (\d{4}-\d{2}-\d{2}) = ", r["newer_data"]).group(1)
+    assert newest > r["latest"]["date"]
+    old = bot._call("get_data", {"series": "UNRATE", "source": "fred", "start": "2020-01-01", "end": "2020-12-31"})
+    assert "newer_data" not in old  # a historical episode: no extra request, no distraction
+
+
+def test_analyst_prompt_asks_for_explicit_threshold_answers():
+    assert "above/below" in analyst.SYSTEM_PROMPT and "peers" in analyst.SYSTEM_PROMPT
+    props = next(t for t in analyst.TOOLS if t["function"]["name"] == "get_data")["function"]["parameters"]
+    assert props["properties"]["peers"]["type"] == "boolean"
 
 
 def test_analyst_waits_out_short_rate_limits():

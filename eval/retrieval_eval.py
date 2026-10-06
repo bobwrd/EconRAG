@@ -6,6 +6,7 @@ run takes seconds — use it to measure every extraction/retrieval change.
     .venv/bin/python eval/retrieval_eval.py            # hybrid retrieval only
     .venv/bin/python eval/retrieval_eval.py --rerank   # + Laya top-5 (~3 min)
     .venv/bin/python eval/retrieval_eval.py --reworded # paraphrased questions
+    .venv/bin/python eval/retrieval_eval.py --dev      # development papers, everyday wording
     .venv/bin/python eval/retrieval_eval.py --model BAAI/bge-small-en-v1.5
         # try another embedding model: chunk embeddings are computed once and
         # kept in data/embeddings_<model>.npy (see ask.embeddings_path)
@@ -72,7 +73,8 @@ def summarize(rows, label=""):
 def main():
     import numpy as np
 
-    source = "reworded_questions.json" if "--reworded" in sys.argv else "questions.json"
+    source = ("reworded_questions.json" if "--reworded" in sys.argv else
+              "dev_questions.json" if "--dev" in sys.argv else "questions.json")
     questions = [q for q in json.loads((ROOT / "eval" / source).read_text())
                  if q.get("evidence") and q["id"] != "both_unemp_migration"]
     name = sys.argv[sys.argv.index("--model") + 1] if "--model" in sys.argv else ask.EMBEDDING_MODEL

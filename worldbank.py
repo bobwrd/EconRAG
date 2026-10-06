@@ -6,6 +6,10 @@ the Poverty & Inequality Platform's poverty and Gini series. Free, no key.
   search(query)                         -> indicator ids, keyword-ranked
   get(indicator, countries, start, end) -> per-country stats computed here
   get(indicator, ["all"], order, n)     -> every economy's latest value, ranked
+  get(..., peers=True)                  -> + income-group / region aggregate, rank, median
+
+Results also carry what the model tends to miss: the newest value when a recent
+`end` cut it off, and the PPP twin of market-rate income per person.
 
 Growth forecasts come from the World Bank's Global Economic Prospects (API
 source 27, one indicator, NYGDPMKTPKDZ), added to the catalog as if it were a
@@ -79,9 +83,21 @@ NOTES = {
                "different across countries. Always state the year; never call it today's rate.",
     "SI.DST.": "Survey-based: values exist only for survey years. Always state the year.",
     ".PP.": "PPP (international dollars): adjusts for price levels; not comparable with current-US$ figures.",
-    "NY.GDP.PCAP.CD": "Current US dollars at market exchange rates; for living standards, PPP "
-                      "(NY.GDP.PCAP.PP.CD) is usually the better comparison.",
 }
+# Per-person income at market exchange rates -> its PPP twin. get() attaches the
+# PPP value for the same year: in testing the model answered "is India's GDP per
+# capita above $3,000?" from the market-rate figure alone.
+PPP_TWIN = {"NY.GDP.PCAP.CD": "NY.GDP.PCAP.PP.CD", "NY.GNP.PCAP.CD": "NY.GNP.PCAP.PP.CD"}
+PPP_NOTE = ("Market exchange rates. Living standards and dollar thresholds are usually compared in PPP: "
+            "'ppp' = {twin} (international $) for the same year. Give both values, say which is which, "
+            "and answer the question for each if they differ.")
+NEWER_NOTE = ("'newer_data': this result stops at the requested end year, but newer data exists. Use the "
+              "newest value unless the user asked for an earlier year.")
+PEERS_NOTE = ("'peers' compares each economy's latest value with its income group and region: 'aggregate' "
+              "is the World Bank's figure for the whole group (weighted, not a simple average); rank (1 = "
+              "highest), median, and percentile (% of members lower) are over member economies with data "
+              "from within {window} years of this economy's.")
+PEER_WINDOW = 5  # years: don't rank a 2024 value against a 2010 survey
 # Current-price money series: changes over time include inflation.
 CURRENT_PRICE_NOTE = ("Current prices: changes over time include inflation. For real growth over time "
                       "use the constant-price version (same id ending .KD instead of .CD).")
@@ -149,6 +165,8 @@ class WorldBank:
             self._names.setdefault(_norm(c["name"].split(",")[0]), c["id"])  # "Egypt, Arab Rep." -> egypt
         for alias, code in ALIASES.items():
             self._names.setdefault(alias, code)
+        # region / income-group name -> its aggregate's code ("Lower middle income" -> LMC)
+        self._aggregate_codes = {c["name"].strip(): c["id"] for c in self.countries.values() if c["aggregate"]}
         self._cache: dict[tuple, list] = {}
 
     # ---- lookup helpers ------------------------------------------------
@@ -174,6 +192,9 @@ class WorldBank:
                     f"{year - 1} is an estimate — say so, and give the edition date. Forecasts are "
                     "revised every January and June."]
         notes = [note for key, note in NOTES.items() if key in indicator]
+        if indicator in PPP_TWIN:
+            notes.append(f"Market exchange rates; for living standards, PPP ({PPP_TWIN[indicator]}) is "
+                         "usually the better comparison.")
         if indicator.endswith(".CD") and indicator[:-3] + ".KD" in self.by_id:
             notes.append(CURRENT_PRICE_NOTE)
         return notes
@@ -185,6 +206,47 @@ class WorldBank:
             self._cache[key] = _fetch_all(f"country/{';'.join(codes)}/indicator/{indicator}",
                                           date=f"{start}:{end}", **extra)
         return self._cache[key]
+
+    def _code(self, row: dict) -> str:
+        """ISO3 code of an API row. Income-group aggregates come back with an
+        empty countryiso3code (only a 2-letter id like XN), so match by name."""
+        return row["countryiso3code"] or self._aggregate_codes.get(row["country"]["value"].strip(), "")
+
+    def _latest(self, indicator: str, codes: list[str] | None = None) -> dict[str, tuple[int, float]]:
+        """Each economy's most recent non-empty value, one request (cached);
+        codes=None = every economy and aggregate."""
+        key = ("latest", indicator, tuple(codes or ()))
+        if key not in self._cache:
+            where = ";".join(codes) if codes else "all"
+            self._cache[key] = _fetch_all(f"country/{where}/indicator/{indicator}", mrnev=1)
+        return {self._code(r): (int(r["date"]), float(r["value"])) for r in self._cache[key]
+                if r["value"] is not None and self._code(r)}
+
+    def _peers(self, indicator: str, code: str) -> dict | None:
+        """The economy's latest value against its income group and region:
+        the World Bank aggregate, plus rank and median among member economies."""
+        latest = self._latest(indicator)
+        if code not in latest or self.countries[code]["aggregate"]:
+            return None
+        year, value = latest[code]
+        out = {"year": year, "value": round(value, 3)}
+        for label, field in (("income_group", "income"), ("region", "region")):
+            group = self.countries[code][field]
+            members = [latest[c][1] for c, meta in self.countries.items()
+                       if not meta["aggregate"] and meta[field] == group and c in latest
+                       and latest[c][0] >= year - PEER_WINDOW]
+            entry = {"group": group}
+            agg = self._aggregate_codes.get(group)
+            if agg in latest:
+                entry["aggregate"] = {"year": latest[agg][0], "value": round(latest[agg][1], 3)}
+            members.sort()
+            mid = len(members) // 2
+            median = members[mid] if len(members) % 2 else (members[mid - 1] + members[mid]) / 2
+            entry.update({"rank": 1 + sum(v > value for v in members), "of": len(members),
+                          "median": round(median, 3),
+                          "percentile": round(100 * sum(v < value for v in members) / len(members))})
+            out[label] = entry
+        return out
 
     def forecast_edition(self) -> str:
         """Date of the current Global Economic Prospects data, e.g. '2026-06-11'."""
@@ -206,7 +268,7 @@ class WorldBank:
         return [{"id": self.indicators[i]["id"], "name": self.indicators[i]["name"]} for i in top]
 
     def get(self, indicator: str, countries: list[str], start: int | None = None, end: int | None = None,
-            order: str = "highest", n: int = 10) -> dict:
+            order: str = "highest", n: int = 10, peers: bool = False) -> dict:
         if indicator not in self.by_id:
             raise ValueError(f"unknown World Bank indicator {indicator!r}: use search_data to find its id")
         meta = self.by_id[indicator]
@@ -216,12 +278,17 @@ class WorldBank:
         if [c.lower() for c in countries] == ["all"]:
             return {**out, **self._rank(indicator, order, n)}
         codes = list(dict.fromkeys(self.country(c) for c in countries))[:20]
-        end = end or date.today().year + (5 if indicator == FORECAST else 0)
+        # The model sometimes passes an end year on its own, assuming it's the newest
+        # (Niger fertility: end=2023, though 2024 existed). Recent end years get the
+        # newest value attached; older ones are deliberate history, left alone.
+        this_year = date.today().year
+        check_newer = end is not None and indicator != FORECAST and this_year - 3 <= end < this_year
+        end = end or this_year + (5 if indicator == FORECAST else 0)
         rows = self._observations(indicator, codes, start or 1960, end)
         series: dict[str, list[tuple[int, float]]] = {c: [] for c in codes}
         for r in rows:
-            if r["value"] is not None and r["countryiso3code"] in series:
-                series[r["countryiso3code"]].append((int(r["date"]), float(r["value"])))
+            if r["value"] is not None and self._code(r) in series:
+                series[self._code(r)].append((int(r["date"]), float(r["value"])))
         detailed = len(codes) <= 4
         out["economies"] = []
         for code in codes:
@@ -249,14 +316,45 @@ class WorldBank:
                     "sparkline": sparkline(list(values)) if len(obs) > 2 else "",
                 })
             out["economies"].append(entry)
+        if check_newer:
+            newest = self._latest(indicator, codes)
+            for entry in out["economies"]:
+                shown = entry.get("latest", {}).get("year", 0)
+                if entry["code"] in newest and newest[entry["code"]][0] > shown:
+                    year, value = newest[entry["code"]]
+                    entry["newer_data"] = f"newest available: {year} = {round(value, 3)}"
+            if any("newer_data" in e for e in out["economies"]):
+                out["notes"].append(NEWER_NOTE)
+        if indicator in PPP_TWIN:
+            self._attach_ppp(PPP_TWIN[indicator], out["economies"])
+            out["notes"][0] = PPP_NOTE.format(twin=PPP_TWIN[indicator])
+        if peers and indicator != FORECAST:
+            for entry in out["economies"][:4]:
+                if (p := self._peers(indicator, entry["code"])):
+                    if entry.get("latest") == {"year": p["year"], "value": p["value"]}:
+                        del p["year"], p["value"]  # same as 'latest': don't repeat it
+                    entry["peers"] = p
+            if any("peers" in e for e in out["economies"]):
+                out["notes"].append(PEERS_NOTE.format(window=PEER_WINDOW))
         return out
+
+    def _attach_ppp(self, twin: str, economies: list[dict]):
+        """PPP value for the same year as each economy's latest market-rate value."""
+        years = {e["code"]: e["latest"]["year"] for e in economies if "latest" in e}
+        if not years:
+            return
+        rows = self._observations(twin, list(years), min(years.values()), max(years.values()))
+        ppp = {(self._code(r), int(r["date"])): float(r["value"]) for r in rows if r["value"] is not None}
+        for e in economies:
+            if (e["code"], years.get(e["code"])) in ppp:
+                e["ppp"] = {"year": years[e["code"]], "value": round(ppp[e["code"], years[e["code"]]], 3)}
 
     def _rank(self, indicator: str, order: str, n: int) -> dict:
         if indicator == FORECAST:  # rank this year's forecast, not each economy's furthest-out year
             rows = _fetch_all(f"country/all/indicator/{indicator}", source=27,
                               date=self.forecast_edition()[:4])
         else:
-            rows = _fetch_all(f"country/all/indicator/{indicator}", mrnev=1)
+            rows = [{"countryiso3code": c, "date": y, "value": v} for c, (y, v) in self._latest(indicator).items()]
         latest = [(r["countryiso3code"], int(r["date"]), float(r["value"])) for r in rows
                   if r["value"] is not None and r["countryiso3code"] in self.countries
                   and not self.countries[r["countryiso3code"]]["aggregate"]]

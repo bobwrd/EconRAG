@@ -10,9 +10,10 @@ the tool results. Offline (or if Groq fails), the original local pipeline answer
 No paid API: FRED and Groq's free tier are the only network calls.
 
 **Direction (Oct 2026):** refocusing on development economics for a general audience —
-see `ROADMAP.md` for the phased plan and what's done (Phases 0a/0b, 1, much of 3). Next:
-the first full benchmark run (`eval/benchmark.py run latest`, ~2 days of Groq budget), then
-pick the next phase from its failures. A general chatbot's answers to the same benchmark are
+see `ROADMAP.md` for the phased plan and what's done (Phases 0a/0b, 1, much of 3). First
+benchmark run (Oct 6, main): 27/30 — failures fixed in code on branch `after-benchmark`, which
+also adds peer groups, `devecon.py`, `longrun.py` (Phase 4; data files still to be saved by
+hand) and 14 harder benchmark questions. Next: re-run the benchmark on that branch. A general chatbot's answers to the same benchmark are
 kept locally in `eval/external/` (2/25 strict, ~6/25 lenient; mostly stale numbers and the
 old $2.15 poverty line).
 
@@ -133,9 +134,12 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
 ## Files
 
 - `ingest.py` — rebuild the index. Run whenever a PDF is added to `docs/`. Always does a
-  **full rebuild** (re-embeds every PDF), not incremental — fine at this corpus size (~11
-  papers, ~864 chunks, ~40s: PDF extraction is the cost, run 4 PDFs in parallel processes),
-  not a decision that scales to hundreds of docs.
+  **full rebuild** (re-embeds every PDF), not incremental — fine at this corpus size (26
+  papers, 2,212 chunks, ~95s since the Oct 2026 development library; PDF extraction is the
+  cost, run 4 PDFs in parallel processes), not a decision that scales to hundreds of docs.
+- `papers.json` — author-year + title for every PDF in `docs/` (docs/ is gitignored); passages
+  are labeled with it, so the analyst cites "Banerjee, Karlan and Zinman (2015)" and verify.py
+  checks that against the label. A test fails if a PDF in docs/ has no entry.
 - `ask.py` — interactive query loop (`.venv/bin/python ask.py`). Reads questions with
   `input()`; also works with piped stdin (exits cleanly on EOF), which is how it's benchmarked.
 - `fred.py` — FRED client: 4 series fetched concurrently, retried on 429/5xx, cached 15 min
@@ -151,6 +155,15 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
   stats or all-economy rankings, and convention `NOTES` attached to results (survey years
   for poverty, PPP vs market rates, current vs constant prices). Catalog cached in
   `data/worldbank/` (delete to refresh). `python worldbank.py "extreme poverty" Ethiopia`.
+- `longrun.py` — Maddison Project 2023 + Penn World Table 11.0 (local files in `data/longrun/`,
+  saved by hand — dataverse.nl serves a bot challenge to scripts — then `python longrun.py --import`,
+  which converts the xlsx to CSV with the standard library). The analyst's `source="longrun"`:
+  per-country stats, 2+ countries add ratios/overtaking/divergence year, series
+  `pwt.growth_accounting` splits growth per worker into capital, schooling and TFP.
+- `devecon.py` — tested development-economics formulas (CAGR, doubling time, rebasing, FGT poverty
+  measures, Gini/Lorenz/Palma, population-weighted group means with coverage, growth
+  decomposition, beta/sigma convergence). Not yet a tool; meant for the Phase 2 sandbox.
+- `PAPER_PROPOSAL.md` — 15 open-access development papers proposed for `docs/`, awaiting approval.
 - `bm25.py` — keyword scoring shared by paper retrieval and the WDI catalog search.
 - `openalex.py` — OpenAlex: `search` (the analyst's `search_literature` tool: real papers with
   abstracts, top 15 by relevance re-ranked with citation counts, versions merged) and
@@ -234,8 +247,17 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
    comes out clean, tables come out as "Label | 45.4 | 45.1 | -0.7" rows; chunks split on
    line boundaries so rows survive. Glued words now <0.2% everywhere; all 18 facts readable.
    Rotated (non-upright) chars are dropped (figure axis labels extracted reversed).
-   Assumes single-column layouts — true of every paper here; a two-column paper would get
-   its columns joined with " | ".
+   Multi-column pages (Oct 2026, for the development library: Science, PNAS, reports with
+   two-page spreads): `region_lines` finds a vertical gutter (a gap wider than ~1 character
+   height, in the middle 40% of the region) and reads left then right, recursively, so three
+   columns work; rows whose text runs across the gutter stay whole. A row counts as evidence of
+   columns only if every run of words on it is 3+ words (prose), so tables aren't split —
+   verified by the 11 original papers extracting **byte-identical** to before. Columns joined by
+   " | ": graduation paper 51% -> 16% of prose lines, deworming 51% -> 0.7%, Smart Buys 50% ->
+   14%. Not fixed: the ODI review's chapter-navigation sidebar is glued onto ~1/3 of its lines;
+   `dedupe_chars` (for fake-bold doubled letters, "CCOOSSTT") was rejected because it also
+   merged real double letters ("Dallas" -> "Dalas"). One NBER PDF lacks a page MediaBox:
+   `open_pdf` repairs it in memory with pypdf.
 
 5. **The prompt must fit in `num_ctx` INCLUDING room for the answer.** Ollama silently cuts
    the *start* of an over-long prompt (log: `truncating input prompt`) — i.e. the
@@ -270,7 +292,12 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
    correlation directions, exact max/min per requested range. **verify.py's first version was
    itself broken**: accepting any difference/ratio of any two tool numbers let through 100% of
    random 1-decimal numbers (a county profile has ~150 numbers -> ~90K pairs). Derived numbers
-   now count only if both operands appear in the answer (6% false-pass; regression test). It also "explained" Cook
+   now count only if both operands appear in the answer (6% false-pass when written, 7.0% re-measured Oct 2026; regression test). Oct 2026 benchmark
+   fixes for false alarms on *correct* answers: rounded numbers with a scale word ("237.5
+   million"), derived numbers within 0.1% (the model rounds ratios), year differences between
+   years named in the answer, digits inside names (COVID-19, G20, series ids), and source tags
+   like "(World Bank: X, 2024)" no longer read as author-year citations (side effect: authors
+   whose surname is a place name aren't checked). It also "explained" Cook
    County's gap with characteristics that were average (33.8% vs 33.4% single parents), barely
    tracked mobility (short commutes, r = 0.12), or were racial composition read as
    "segregation". Now `county_profile` labels each characteristic vs national (`NOTABLE_SD`
@@ -348,8 +375,9 @@ Measured on `eval/` (small sets — treat 1-2 question differences as noise):
 | Router correct (eval set / held-out) | 7/23, 7/15 | 23/23, 15/15 |
 | Eval facts readable in extracted text | 16/18 | 18/18 |
 | Fact in top-15 candidates (original / reworded questions) | 15/18, — | 17/18, 7/12 |
-| Fact in top-5 after reranking (original / reworded) | 13/18, — | 16/18, 6/12 |
-| Online analyst on the 31-question benchmark | — | not yet run (general chatbot: 2/25 strict) |
+| Fact in top-5 after reranking (original / reworded) | 13/18, — | 16/18, 6/12 (15/18, 6/12 with the 25-paper library) |
+| Development papers, everyday wording (`--dev`), top-5 after reranking | — | 7/11 |
+| Online analyst on the benchmark (main, Oct 6) | — | 27/30 (same 25 as the chatbot: 23/25 vs 2/25) |
 | phi3.5 answers correct (first 21 eval questions; run cut short) | 12/21 | 15/21 |
 | Prompts silently truncated by Ollama | most doc prompts | none |
 

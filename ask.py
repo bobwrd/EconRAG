@@ -21,7 +21,7 @@ from sentence_transformers import SentenceTransformer
 from transformers import AutoTokenizer
 
 import fred
-from analyst import Analyst
+from analyst import Analyst, paper_label
 from bm25 import BM25
 from atlas import Atlas
 from worldbank import WorldBank
@@ -224,7 +224,7 @@ def build_doc_context(question: str, results: list, tokenizer, num_ctx: int | No
               - count_tokens(tokenizer, PROMPT_TEMPLATE.format(context="", question=question)))
     parts = []
     for chunk, _score in results:
-        piece = f"(from {chunk['source']}) {chunk['text']}"
+        piece = f"(from {paper_label(chunk['source'])}) {chunk['text']}"
         enc = tokenizer(piece, add_special_tokens=False, return_offsets_mapping=True)
         cost = len(enc["input_ids"]) + 2  # + the "\n\n" separator
         if cost <= budget:

@@ -27,6 +27,21 @@ won't change. This project wins on what they can't do reliably:
 
 ---
 
+## Status (Oct 6 2026)
+
+| Phase | State |
+|---|---|
+| 0. Measure | Done. Baseline 27/30 on `main`; benchmark now 45 questions, re-run on `after-benchmark` pending |
+| 1. Core data | Done except Our World in Data series beyond Maddison |
+| 2. Computation | Helper library done (`devecon.py`); `run_python` tool and charts not started |
+| 3. Literature | Development library (15 papers), OpenAlex, citation checks done; RCT databases not started |
+| 4. Long-run / subnational | Maddison live; Penn World Table blocked; subnational not started |
+| 5. Workflows | Not started |
+| 6. Interface | Not started |
+
+All Oct 6 work is on branch `after-benchmark` (uncommitted): benchmark fixes, peer groups,
+`devecon.py`, `longrun.py`, the development library, multi-column PDF extraction.
+
 ## Phase 0: Measure cheaply
 
 Groq's free tier allows 1,000 requests/day, 8,000 tokens/minute, **and 200,000 tokens per
@@ -35,12 +50,23 @@ when a day of testing used it up). At ~10-15K tokens per analyst question, one b
 (31 questions) spans about two days of budget; `benchmark.py run` stops cleanly at the cap
 and resumes where it left off.
 
-- [x] **0a. Tool tests (zero LLM tokens)** — `tests/test_tools.py`, 21 tests, ~3s, run after
-      every change. Also tests the analyst loop against a scripted fake Groq. First catch: the
+- [x] **0a. Tool tests (zero LLM tokens)** — `tests/test_tools.py` (43 tests), plus
+      `tests/test_devecon.py` (28) and `tests/test_longrun.py` (15 + 1 skipped until PWT is
+      present), run after every change. Usually seconds; `test_tools` occasionally takes ~3 min,
+      probably FRED rate-limit retries (not confirmed). Also tests the analyst loop against a scripted fake Groq. First catch: the
       number fact-check accepted 100% of random 1-decimal numbers (any-pair arithmetic over
       ~150 tool numbers); now only arithmetic on numbers shown in the answer counts (6%).
-- [ ] **0b. Mini benchmark: 31 questions, auto-scored by code (no LLM judge)** —
-      `eval/benchmark.py` + `eval/benchmark_questions.json`. Baseline running (Oct 2026).
+- [x] **0b. Mini benchmark, auto-scored by code (no LLM judge)** —
+      `eval/benchmark.py` + `eval/benchmark_questions.json`. **Baseline (Oct 6 2026, main): 27/30**
+      (one question not yet run; 26/30 before a grading-pattern fix). On the 25 questions a general
+      chatbot also answered: 23/25 vs 2/25. Fit in one day's budget (~10K tokens/question). Real
+      failures: a stale year the model passed itself (Niger), a market-rate-only answer to a PPP trap
+      (India), a paper's own figure not quoted (race gap); plus 4 false "not verified" flags on
+      correct answers. All fixed in code on branch `after-benchmark` (not yet re-measured).
+      14 harder questions added for the next phases (31 → 45): 5 `compute` (growth rates,
+      doubling time, ratios, population-weighted averages, peer groups), 5 `dev_lit`
+      (microcredit, deworming, cash transfers, graduation, the $3.00 line), 4 `longrun`.
+      Next: `benchmark.py run after-fixes` on the branch (~2 days of Groq budget).
       - ~15 data questions, answers computed directly from source data by a script, so
         they stay correct when the data updates
       - ~5 literature questions with an expected-fact pattern (like `eval/questions.json`)
@@ -50,13 +76,13 @@ and resumes where it left off.
         years old · nominal vs real growth · headcount ratio vs number of poor people ·
         employment rate vs 100 − unemployment
       - ~120-150 Groq requests and ~300-450K tokens: about two days of the free budget.
-- [ ] **0c. General-chatbot comparison at zero API cost** (user). Questions in
+- [x] **0c. General-chatbot comparison at zero API cost** (user): 2/25 strict. Questions in
       `eval/external/questions.md`; paste answers into `eval/external/<chatbot>.md` under the
       same `## id` headings; grade with `benchmark.py score-external <chatbot>`.
 - ~~0d. Smoke set~~ — dropped: 0a covers quick checks for free; run the full benchmark at
   the end of each phase.
 
-## Phase 1: Core development data — built Oct 2026 (World Bank); benchmark pending
+## Phase 1: Core development data — built Oct 2026; benchmarked (dev_data 13/14 on main)
 
 Three general tools replace today's FRED-only ones:
 `search_data(query)` → a local catalog (series descriptions embedded with the existing
@@ -72,10 +98,12 @@ retrieval code), `get_data(source, series, countries, years)` → computed stats
       through 2028, 143 economies + regions), labeled FORECAST with the edition date. IMF WEO
       still out: its API rejects Python clients and DBnomics' mirror is stale (Apr 2025). GEP
       has growth only — inflation/debt forecasts remain a gap.
-- [ ] **Our World in Data** (CSV downloads): curated long-run series with clear sourcing.
+- [~] **Our World in Data** (CSV downloads): used for Maddison GDP per capita (Phase 4);
+      other curated series not added yet.
 - [x] **Country handling in code**: names, ISO codes, aliases ("Ivory Coast" → CIV,
       "DRC" → COD), typo tolerance, regions and income groups; "Congo" rejected as ambiguous.
-      Peer-group comparisons still to do.
+      Peer groups: `get_data(peers=true)` adds the income-group and region aggregates plus the
+      country's rank/median/percentile among members (computed in Python).
 - [x] FRED and the Opportunity Atlas kept as modules (FRED now via the same two tools).
 
 ## Phase 2: Computation sandbox
@@ -84,7 +112,7 @@ retrieval code), `get_data(source, series, countries, years)` → computed stats
       (cross-country regressions, convergence, growth decompositions). Runs in a subprocess
       with no network, a time limit, and an output-size cap. Fine for personal use; **not**
       safe to expose to other users as-is.
-- [ ] `devecon` helper library, tested: PPP conversion, constant-price rebasing, CAGR,
+- [x] `devecon.py` helper library (28 tests, no network), built Oct 2026; not yet exposed as a tool: PPP conversion, constant-price rebasing, CAGR,
       poverty gap / squared gap, Gini and Lorenz from distributions, per-capita, income-group
       averages (population-weighted vs simple), latest-available-year logic.
 - [ ] Charts saved as PNG with source notes; numbers computed in the sandbox are fed to
@@ -92,9 +120,16 @@ retrieval code), `get_data(source, series, countries, years)` → computed stats
 
 ## Phase 3: Literature and evidence
 
-- [ ] **Development library**: open-access PDFs (World Bank Policy Research Working Papers,
-      NBER development papers, J-PAL and 3ie evidence reviews), ingested with title, authors,
-      and year per chunk so citations are real references, not filenames.
+- [x] **Development library** (Oct 2026): all 15 approved open-access papers in `docs/`
+      (`PAPER_PROPOSAL.md`: microcredit, cash transfers, deworming, graduation, UBI, education
+      "smart buys", gender, poverty measurement and the $3.00 line, institutions, growth,
+      structural change, migration), 26 papers / 2,212 chunks in all. Passages carry author-year
+      and title from `papers.json`, so citations are real references, not file names.
+      Multi-column extraction added to `ingest.py` (original papers extract byte-identical).
+      Retrieval, evidence in the top 5 after reranking: development questions in everyday words
+      7/11 (`retrieval_eval.py --dev`, measured before the 15th paper was added); original
+      questions 16 -> 15/18 (one fact pushed from rank 15 to 19 by the larger corpus); reworded
+      6/12 unchanged. Known gap: the ODI review's sidebar text is glued onto ~1/3 of its lines.
 - [x] **OpenAlex** (free, ~250M works): `search_literature` tool (abstracts count as
       evidence for the fact-check) and citation existence checks: unsupported citations are
       labeled "real, not retrieved" vs "likely invented" in the revision feedback. Built Oct
@@ -113,8 +148,15 @@ retrieval code), `get_data(source, series, countries, years)` → computed stats
       `rank_regions`).
 - [ ] **DHS Program indicators API**: health, fertility, nutrition, and education from
       household surveys.
-- [ ] **Penn World Table** and **Maddison Project** (downloads): long-run GDP, productivity,
-      and capital for growth questions ("how did South Korea diverge from Ghana?").
+- [x] **Maddison Project 2023**: live via Our World in Data's CSV (GDP per capita back to year
+      1; no population). `longrun.py`, `source="longrun"`: per-country stats, two-country
+      comparison with ratios, overtaking and divergence years (e.g. South Korea passed Ghana in
+      1967). Tests check exact values from the file.
+- [ ] **Penn World Table 11.0**: blocked — its only host (dataverse.nl) serves a bot check that
+      times out for scripts and, on Oct 6, in the user's browser too. Code is ready (growth
+      accounting into capital, schooling, TFP; tested on fixture files): save `pwt110.xlsx`
+      into `data/longrun/` and run `longrun.py --import`. Alternative if it stays blocked: the
+      PWT 10.01 series FRED republishes (already have a FRED key), or the CRAN `pwt10` package.
 - [ ] Later, if useful: WHO GHO (health), UNESCO UIS (education), FAOSTAT (agriculture),
       ILOSTAT (labor), OECD CRS (aid flows).
 

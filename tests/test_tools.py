@@ -233,6 +233,7 @@ def test_worldbank_peer_comparison():
 # ------------------------------------------------------------------ openalex (network)
 def test_openalex_search_returns_citable_papers():
     import openalex
+    _require_openalex()
     papers = openalex.search("microfinance randomized evaluation", n=4)
     assert papers and all(re.match(r".+ \((19|20)\d\d\)$", p["cite_as"]) for p in papers)
     titles = [p["title"] for p in papers]
@@ -240,8 +241,17 @@ def test_openalex_search_returns_citable_papers():
     assert any("Banerjee" in p["cite_as"] for p in papers)
 
 
+def _require_openalex():
+    """OpenAlex's anonymous budget (~100 searches a day) runs out on busy days: then
+    these tests SKIP (like being offline) instead of failing."""
+    r = requests.get("https://api.openalex.org/works", params={"search": "poverty", "per-page": 1}, timeout=20)
+    if r.status_code == 429:
+        raise requests.ConnectionError("OpenAlex daily budget used up (HTTP 429)")
+
+
 def test_openalex_spots_invented_citations():
     import openalex
+    _require_openalex()
     assert openalex.check_citation("Okonjo and Whitfield (2019)") == {"exists": False, "match": None}
     assert openalex.check_citation("Smithson and Okafor (2021)")["exists"] is False
     assert openalex.check_citation("Miguel and Kremer (2004)")["exists"] is True
@@ -249,6 +259,7 @@ def test_openalex_spots_invented_citations():
 
 
 def test_analyst_classifies_unsupported_citations():
+    _require_openalex()
     bot = _bot()
     script = [_tool_call("search_literature", {"query": "microfinance randomized evaluation"}),
               {"content": "Banerjee et al. (2015) find modest effects; Okonjo and Whitfield (2019) disagree."},
@@ -555,9 +566,9 @@ def main():
         try:
             fn()
             print(f"  PASS  {name}")
-        except requests.ConnectionError:
+        except requests.ConnectionError as e:
             skipped += 1
-            print(f"  SKIP  {name} (no network)")
+            print(f"  SKIP  {name} ({'OpenAlex budget used up' if 'OpenAlex' in str(e) else 'no network'})")
         except Exception:
             failed += 1
             print(f"  FAIL  {name}\n" + "".join(f"        {l}\n" for l in traceback.format_exc().splitlines()[-4:]))

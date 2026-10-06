@@ -10,7 +10,11 @@ the tool results. Offline (or if Groq fails), the original local pipeline answer
 No paid API: FRED and Groq's free tier are the only network calls.
 
 **Direction (Oct 2026):** refocusing on development economics for a general audience —
-see `ROADMAP.md` for the phased plan; start with its Phase 0 (cheap evaluation).
+see `ROADMAP.md` for the phased plan and what's done (Phases 0a/0b, 1, much of 3). Next:
+the first full benchmark run (`eval/benchmark.py run latest`, ~2 days of Groq budget), then
+pick the next phase from its failures. A general chatbot's answers to the same benchmark are
+kept locally in `eval/external/` (2/25 strict, ~6/25 lenient; mostly stale numbers and the
+old $2.15 poverty line).
 
 ## Hardware constraint (read this first)
 
@@ -22,12 +26,12 @@ resident in memory/GPU at the same time?
 ## Architecture
 
 ```
-docs/*.pdf --ingest.py--> data/chunks.json + data/embeddings.npy   (run once per new PDF)
+docs/*.pdf --ingest.py--> data/chunks.json + data/embeddings_<model>.npy   (once per new PDF)
 
 question --route_query()--> live_data | documents | both           (Laya, CPU)
               |                              |
-         fred.py (FRED API)         cosine similarity (top 15)
-              |                     --> Laya rerank (CPU) --> top 5
+         fred.py (FRED API)         hybrid bge-small + BM25 (top 15)
+              |                     --> Laya rerank, fused c=10 (CPU) --> top 5
               |                              |
               +------------> ask_llm() --> Ollama (phi3.5) --> answer
 ```
@@ -60,9 +64,9 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
 
   Better candidates, but **no end-to-end gain**: after Laya's top-5 (what reaches the
   generator) original 14/18 for both models, reworded MiniLM 6/12 vs bge 5/12 (noise). Laya
-  drops evidence retrieval ranked 3rd/8th, so **the reranker is now the bottleneck** for
-  paper questions. Kept bge-small anyway (better pool, negligible cost) — revisit if a
-  reranker change shows otherwise. Weighting dense 2x helped neither set. Neither
+  dropped evidence retrieval ranked 3rd/8th, so the reranker was the bottleneck — fixed by
+  the fusion constant (see Reranking: now 16/18 and 6/12). Kept bge-small (better pool,
+  negligible cost). Weighting dense 2x helped neither set. Neither
   embedding model is strong alone — paraphrase stays hard. Online it matters less: the
   analyst writes its own search queries in the field's vocabulary. Embeddings live in one file per model,
   `data/embeddings_<model>.npy` (`ask.embeddings_path`), so the Phase 1 commit (which reads
@@ -157,21 +161,26 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
   file, so never charged (429 when over); optional `OPENALEX_API_KEY` in `.env` = 10x.
 - **IMF not integrated (Oct 2026):** its DataMapper API returns every country regardless of
   the requested one (~120KB/call) and answers `curl` but rejects Python `requests` (403/HTML);
-  not worked around (would mean disguising the client). Forecasts are the gap this leaves.
+  not worked around (would mean disguising the client). Growth forecasts come from the World
+  Bank's Global Economic Prospects instead; inflation/debt forecasts remain a gap.
 - `verify.py` — fact-checks analyst answers (numbers + citations vs tool results).
 - `groq_client.py` — Groq API call + `GroqUnavailable`; `GROQ_MODEL` lives here.
 - `tests/test_tools.py` — tool + analyst-loop tests (fake Groq, zero tokens, ~3s). Run after
   every change: `.venv/bin/python tests/test_tools.py`.
 - `eval/benchmark.py` — 31-question benchmark of the analyst (dev data, US tools, traps,
   literature), truths computed live from World Bank/FRED/Atlas, scored by code. `run` is
-  resumable and takes ~1h on Groq's free tier (run in background); `score`; `questions` /
+  resumable, records tokens per question, and stops cleanly at Groq's daily cap — a full run
+  spans ~2 days of the free budget (rerun the same command to continue); `score`; `questions` /
   `score-external <name>` for pasted answers from general chatbots in `eval/external/` (kept out of git).
 - `data/atlas/` — downloaded once (public): `county_outcomes_simple.csv` and
   `cty_covariates.csv` (opportunityinsights.org/data, codebooks = "Table 2" and "Table 10"),
   `national_county.txt` (census.gov FIPS -> county name; the Atlas files have codes only).
 - `.env` — `FRED_API_KEY`, `GROQ_API_KEY` (optional; without it everything runs locally),
   `TYPESAFE_API_KEY` (unused so far). Gitignored.
-- `data/chunks.json`, `data/embeddings.npy` — generated, don't hand-edit, regenerate via `ingest.py`.
+- `data/chunks.json`, `data/embeddings_<model>.npy` — generated, don't hand-edit, regenerate
+  via `ingest.py`. `data/embeddings.npy` (MiniLM) is only for checking out the `phase1` tag.
+- `eval/reworded_questions.json` — 12 paraphrases of eval questions in everyday words, for
+  `retrieval_eval.py --reworded` (where keyword search can't help).
 - `eval/questions.json` — 23 questions with expected facts, each checked against the paper
   text (19 docs incl. one deliberately unanswerable, 3 live, 1 both), plus an `evidence`
   phrase per doc question for `eval/retrieval_eval.py` (retrieval-only, seconds per run,
@@ -338,12 +347,14 @@ Measured on `eval/` (small sets — treat 1-2 question differences as noise):
 |---|---|---|
 | Router correct (eval set / held-out) | 7/23, 7/15 | 23/23, 15/15 |
 | Eval facts readable in extracted text | 16/18 | 18/18 |
-| Fact in top-15 candidates (original / reworded questions) | 15/18, 5/8 | 17/18, 5/8 |
-| Fact in top-5 after reranking | 13/18 | 14/18 |
+| Fact in top-15 candidates (original / reworded questions) | 15/18, — | 17/18, 7/12 |
+| Fact in top-5 after reranking (original / reworded) | 13/18, — | 16/18, 6/12 |
+| Online analyst on the 31-question benchmark | — | not yet run (general chatbot: 2/25 strict) |
 | phi3.5 answers correct (first 21 eval questions; run cut short) | 12/21 | 15/21 |
 | Prompts silently truncated by Ollama | most doc prompts | none |
 
-Remaining weaknesses, roughly in order of size:
+Remaining weaknesses, roughly in order of size (1 and 3 are the offline phi3.5 path; the
+online analyst's weaknesses are gotcha #8 and whatever the benchmark shows):
 1. **The ~4B generator** still states wrong numbers or says "the context doesn't contain" a
    figure that's present, in roughly a quarter to a third of doc answers — even when the
    right chunk is in the prompt. Bounded by 8GB RAM; no prompt fix found.

@@ -33,6 +33,11 @@ _groq_blocked_until = 0.0  # after a daily-cap 429, skip Groq until then
 _session = requests.Session()
 
 
+def notify(text: str):
+    """Status messages for the user; web.py replaces this to show them on the page."""
+    print(text, flush=True)
+
+
 # Free tier (Oct 2026): 8,000 tokens/minute and 1,000 requests/day for every model;
 # gpt-oss-120b also has 200,000 tokens per rolling 24 hours (others unchecked). The daily token cap is NOT in the
 # x-ratelimit-* headers; it only appears in the 429 error message.
@@ -65,7 +70,7 @@ def post(payload: dict, stream: bool = False) -> requests.Response:
             # don't retry Groq on every request until the daily cap clears
             _groq_blocked_until = time.time() + (e.retry_after or 15 * 60)
             why = "rate limit" if e.retry_after and "per day" not in str(e) else str(e)[:80]
-            print(f"  (Groq {why}: switching to OpenRouter {OPENROUTER_MODEL})", flush=True)
+            notify(f"  (Groq {why}: switching to OpenRouter {OPENROUTER_MODEL})")
     response = _post(OPENROUTER_URL, OPENROUTER_API_KEY, OPENROUTER_MODEL,
                      # only route to OpenRouter providers that support every parameter sent (tools)
                      {**payload, "provider": {"require_parameters": True}}, stream, "OpenRouter")

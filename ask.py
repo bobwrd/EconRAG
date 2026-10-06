@@ -13,6 +13,7 @@ import json
 import re
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from types import SimpleNamespace
 
 import laya
 import numpy as np
@@ -334,8 +335,10 @@ def paper_searcher(model, chunks, embeddings, bm25, agent, tokenizer):
     return search_papers
 
 
-def main():
-    pool = ThreadPoolExecutor(max_workers=4)
+def load_models(pool: ThreadPoolExecutor) -> SimpleNamespace:
+    """Loads the index, embedder, Laya and tokenizer (plus Atlas and World Bank
+    with a Groq key). Shared with web.py: run one or the other, never both —
+    two copies of the models don't fit in 8GB."""
     # Load everything concurrently — mostly disk I/O and Python import work.
     # Same set of models resident as before; they're just loaded in parallel.
     # Laya is forced to CPU: Ollama's phi3.5 uses the GPU (Metal) for
@@ -351,57 +354,70 @@ def main():
     atlas_f = pool.submit(Atlas) if USE_GROQ else None
     wb_f = pool.submit(WorldBank) if USE_GROQ else None
     chunks, embeddings, bm25 = index_f.result()
-    model, agent, tokenizer = model_f.result(), agent_f.result(), tok_f.result()
-    warm_f = pool.submit(warm_up, agent, model)  # first calls pay one-time setup
     print(f"Loaded {len(chunks)} chunks.")
+    return SimpleNamespace(chunks=chunks, embeddings=embeddings, bm25=bm25, model=model_f.result(),
+                           agent=agent_f.result(), tokenizer=tok_f.result(),
+                           atlas=atlas_f.result() if atlas_f else None, wb=wb_f.result() if wb_f else None)
 
-    analyst = Analyst(paper_searcher(model, chunks, embeddings, bm25, agent, tokenizer),
-                      atlas_f.result(), wb_f.result()) if USE_GROQ else None
+
+def make_analyst(m: SimpleNamespace) -> Analyst | None:
+    return Analyst(paper_searcher(m.model, m.chunks, m.embeddings, m.bm25, m.agent, m.tokenizer),
+                   m.atlas, m.wb) if USE_GROQ else None
+
+
+def answer_locally(question: str, m: SimpleNamespace, pool: ThreadPoolExecutor) -> str:
+    """The offline pipeline: Laya routes, then FRED and/or documents -> phi3.5."""
+    route = route_query(question, m.agent)
+    print(f"\n  Router decision: {route}")
+
+    # FRED is network-bound: start it now so it overlaps retrieval.
+    fred_f = pool.submit(fred.get_indicator_summary) if route in ("live_data", "both") else None
+
+    doc_context = None
+    if route in ("documents", "both"):
+        candidates = top_k_chunks(question, m.model, m.chunks, m.embeddings, m.bm25)
+        print(f"\n  Hybrid retrieval (cosine + BM25) top {len(candidates)}:")
+        for chunk, score in candidates:
+            print(f"    [{score:.3f}] {chunk['source']}: {' '.join(chunk['text'][:90].split())[:70]}...")
+
+        results = rerank_with_laya(question, candidates, m.agent)
+        print(f"\n  Laya reranked, keeping top {len(results)}:")
+        for chunk, score in results:
+            print(f"    [{score:.3f}] {chunk['source']}: {' '.join(chunk['text'][:90].split())[:70]}...")
+
+        doc_context = build_doc_context(question, results, m.tokenizer)
+
+    print(f"\n  Asking {OLLAMA_MODEL}...")
+    answers = []
+    if fred_f:
+        try:
+            fred_context = f"Live economic indicators (from FRED):\n{fred_f.result()}"
+        except Exception as e:  # network/API hiccup: don't kill the session
+            print(f"\n  WARNING: couldn't fetch FRED data ({e}); skipping the live-data answer.")
+            fred_f = None
+    if fred_f:
+        # `both` questions get two separate, single-purpose generations:
+        # one asked to ground itself in live numbers AND document
+        # synthesis at once proved unreliable in testing (it would drop
+        # the FRED figure, or fabricate citations/examples to compensate).
+        print(f"\nAnswer{' (from live data)' if doc_context is not None else ''}:")
+        answers.append(ask_llm(question, fred_context, m.tokenizer))
+    if doc_context is not None:
+        print(f"\nAnswer{' (from research documents)' if fred_f else ''}:")
+        answers.append(ask_llm(question, doc_context, m.tokenizer))
+    return "\n\n".join(answers)
+
+
+def main():
+    pool = ThreadPoolExecutor(max_workers=4)
+    m = load_models(pool)
+    agent, model = m.agent, m.model
+    warm_f = pool.submit(warm_up, agent, model)  # first calls pay one-time setup
+
+    analyst = make_analyst(m)
     print(f"Answering with {GROQ_MODEL} via Groq (tools: papers, World Bank, FRED, Opportunity Atlas); "
           f"local {OLLAMA_MODEL} if Groq is unreachable." if analyst else
           f"Answering locally with {OLLAMA_MODEL} (set GROQ_API_KEY in .env for the online analyst).")
-
-    def answer_locally(question: str) -> str:
-        """The offline pipeline: Laya routes, then FRED and/or documents -> phi3.5."""
-        route = route_query(question, agent)
-        print(f"\n  Router decision: {route}")
-
-        # FRED is network-bound: start it now so it overlaps retrieval.
-        fred_f = pool.submit(fred.get_indicator_summary) if route in ("live_data", "both") else None
-
-        doc_context = None
-        if route in ("documents", "both"):
-            candidates = top_k_chunks(question, model, chunks, embeddings, bm25)
-            print(f"\n  Hybrid retrieval (cosine + BM25) top {len(candidates)}:")
-            for chunk, score in candidates:
-                print(f"    [{score:.3f}] {chunk['source']}: {' '.join(chunk['text'][:90].split())[:70]}...")
-
-            results = rerank_with_laya(question, candidates, agent)
-            print(f"\n  Laya reranked, keeping top {len(results)}:")
-            for chunk, score in results:
-                print(f"    [{score:.3f}] {chunk['source']}: {' '.join(chunk['text'][:90].split())[:70]}...")
-
-            doc_context = build_doc_context(question, results, tokenizer)
-
-        print(f"\n  Asking {OLLAMA_MODEL}...")
-        answers = []
-        if fred_f:
-            try:
-                fred_context = f"Live economic indicators (from FRED):\n{fred_f.result()}"
-            except Exception as e:  # network/API hiccup: don't kill the session
-                print(f"\n  WARNING: couldn't fetch FRED data ({e}); skipping the live-data answer.")
-                fred_f = None
-        if fred_f:
-            # `both` questions get two separate, single-purpose generations:
-            # one asked to ground itself in live numbers AND document
-            # synthesis at once proved unreliable in testing (it would drop
-            # the FRED figure, or fabricate citations/examples to compensate).
-            print(f"\nAnswer{' (from live data)' if doc_context is not None else ''}:")
-            answers.append(ask_llm(question, fred_context, tokenizer))
-        if doc_context is not None:
-            print(f"\nAnswer{' (from research documents)' if fred_f else ''}:")
-            answers.append(ask_llm(question, doc_context, tokenizer))
-        return "\n\n".join(answers)
 
     print("Ready. Type a question (or 'quit' to exit).\n")
     try:
@@ -422,9 +438,9 @@ def main():
                     analyst.run(question)
                 except GroqUnavailable as e:
                     print(f"\n  (Groq unavailable — {e}. Answering locally with {OLLAMA_MODEL}.)")
-                    analyst.remember(question, answer_locally(question))
+                    analyst.remember(question, answer_locally(question, m, pool))
             else:
-                answer_locally(question)
+                answer_locally(question, m, pool)
             print("-" * 60)
             warm_f = pool.submit(warm_up, agent, model)
     finally:

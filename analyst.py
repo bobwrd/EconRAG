@@ -30,8 +30,10 @@ import time
 import fred
 import openalex
 import verify
+from bm25 import _terms
 import charts
 import compute
+import groq_client
 import dhs
 import gdl
 import jpal
@@ -168,6 +170,8 @@ def _summary(name: str, result: dict) -> str:
         return "; ".join(f"{e['title']} ({', '.join(e['countries']) or '?'})" for e in result["evaluations"]) \
             or "no evaluations found"
     if name == "search_papers":
+        if not result.get("sources"):
+            return result.get("note") or "no passages"
         return "passages from " + ", ".join(dict.fromkeys(result["sources"]))
     if name == "county_profile":
         if "ambiguous" in result:
@@ -216,6 +220,21 @@ def _summary(name: str, result: dict) -> str:
     return ""
 
 
+REPEAT_QUERY_OVERLAP = 0.6  # shared keywords / all keywords at which a paper search counts as a repeat
+
+
+def _repeated_query(query: str, earlier: list[str]) -> str | None:
+    """The earlier search this one nearly repeats (same keywords, reworded), if any.
+    Measured on one real question (Oct 2026): 4 rewordings of one search — this
+    catches the 2 closest; queries that share a topic but add new terms pass."""
+    words = set(_terms(query))
+    for previous in earlier:
+        other = set(_terms(previous))
+        if words and other and len(words & other) / len(words | other) >= REPEAT_QUERY_OVERLAP:
+            return previous
+    return None
+
+
 # author-year + title per PDF in docs/ (docs/ itself is gitignored); used by ask.py
 PAPERS = json.loads(Path("papers.json").read_text()) if Path("papers.json").exists() else {}
 
@@ -246,10 +265,13 @@ def _trim_regions(result: dict) -> dict:
 
 
 def clean_markers(answer: str) -> str:
-    """Removes the 【...】 source markers gpt-oss and Nemotron add: a marker naming a
+    """Removes the 【...】 / "(2†lines-5-9)" source markers gpt-oss and Nemotron add: a marker naming a
     citation becomes a normal "(Author (Year))"; bare tool names are dropped."""
     answer = re.sub(r"【\s*[a-z_]+\s*:\s*([^】]+?)\s*】", r" (\1)", answer)
     answer = re.sub(r"\s*【[^】]*】", "", answer)
+    # Nemotron (OpenRouter backup) also writes bare "(2†lines-5-9)" / "5†L1-L4" markers
+    answer = re.sub(r"\s*\(\s*\d+†[^()]*\)", "", answer)
+    answer = re.sub(r"\s*\d+†[^\s.,;:)]*", "", answer)
     return re.sub(r" \((\([^()]*\([^()]*\)\))\)", r" \1", answer)  # " ((X (2016)))" -> " (X (2016))"
 
 
@@ -288,19 +310,40 @@ class Analyst:
         self._gdl = None
         self.history: list[dict] = []
         self.last_tokens = 0  # Groq tokens used by the latest run() (free tier: 200K/day)
+        self.last_result: dict = {}  # structured copy of the latest run(), for the web UI
+        # on_event(kind, text, **data): where progress goes; None prints to the terminal (ask.py)
+        self.on_event = None
         self._tools_chars = len(json.dumps(TOOLS))
         self._reset_evidence()
+
+    def _emit(self, kind: str, text: str, **data):
+        """Progress for the user: printed (ask.py) or handed to on_event (web.py)."""
+        if self.on_event:
+            self.on_event(kind, text, **data)
+        else:
+            print(text, flush=True)
+
+    def evidence(self) -> dict:
+        """What the latest answer was checked against (for a later technical rewrite)."""
+        return {"structured": list(self._structured), "passages": list(self._passages),
+                "sources": set(self._sources), "results": list(self._results)}
 
     def _reset_evidence(self):
         self._structured: list[str] = []   # FRED + Atlas results (numbers may be combined)
         self._passages: list[str] = []     # paper text (numbers/citations must match directly)
         self._sources: set[str] = set()
         self._seen_chunks: set[int] = set()
+        self._paper_queries: list[str] = []
         self._results: list[tuple[str, dict, dict]] = []  # every tool call this question, for charts
 
     def _call(self, name: str, args: dict) -> dict:
         try:
             if name == "search_papers":
+                earlier = _repeated_query(args["query"], self._paper_queries)
+                if earlier:  # a reworded repeat returns lower-ranked chunks and costs ~1.8K tokens
+                    return {"passages": "", "note": f"nearly the same as your earlier search {earlier!r}: its "
+                            "passages are above. Answer from them, or search a clearly different topic."}
+                self._paper_queries.append(args["query"])
                 text, sources, ids = self.search_papers(args["query"], self._seen_chunks)
                 self._seen_chunks |= set(ids)
                 self._passages.append(text)
@@ -425,7 +468,8 @@ class Analyst:
             except GroqUnavailable as e:
                 if e.retry_after is None or e.retry_after > MAX_RATE_LIMIT_WAIT:
                     raise
-                print(f"  (Groq free-tier rate limit — waiting {e.retry_after:.0f}s)", flush=True)
+                self._emit("wait", f"  (Groq free-tier rate limit — waiting {e.retry_after:.0f}s)",
+                           seconds=e.retry_after)
                 time.sleep(e.retry_after + 0.5)
         return groq_post(payload).json()
 
@@ -451,6 +495,7 @@ class Analyst:
         messages = [{"role": "system", "content": SYSTEM_PROMPT.format(today=datetime.date.today())},
                     *self.history, {"role": "user", "content": question}]
         revised = False
+        trail: list[dict] = []  # tool calls with one-line summaries, for last_result
         for round_ in range(MAX_ROUNDS):
             payload = {"messages": messages, "temperature": 0.2, "max_tokens": 4096,
                        # medium, not low: choosing tools well takes more thought
@@ -472,8 +517,8 @@ class Analyst:
                 if (numbers or citations) and not revised and round_ < MAX_ROUNDS - 1:
                     # one chance to fix it, with tools still available
                     revised = True
-                    print(f"  (fact-check: unsupported {', '.join(numbers + citations)} — asking for a revision)",
-                          flush=True)
+                    self._emit("revision", f"  (fact-check: unsupported {', '.join(numbers + citations)} — "
+                               "asking for a revision)", items=numbers + citations)
                     messages += [{"role": "assistant", "content": answer}, {"role": "user", "content": (
                         "Automatic fact-check of your answer: "
                         + (f"these numbers appear in no tool result (nor as a difference/ratio of tool "
@@ -484,15 +529,19 @@ class Analyst:
                           "tools if you need the real figure. If you drop a citation, drop the claim it "
                           "supported too, unless a retrieved source supports it. Don't mention this check.")}]
                     continue
-                print(f"\nAnswer:\n{answer}")
+                self._emit("answer", f"\nAnswer:\n{answer}", answer=answer)
                 if numbers or citations:
-                    print(f"\n  ⚠ Not verified against tool results: {', '.join(numbers + citations)}")
+                    self._emit("unverified", f"\n  ⚠ Not verified against tool results: "
+                               f"{', '.join(numbers + citations)}", items=numbers + citations)
                 # plain Python, no tokens; only when the data is the point, and no repeats
                 self.last_charts = charts.auto(self._results, wb=self.wb, question=question,
                                                previous=self._chart_keys)
                 self._chart_keys = {charts.spec_key(s) for s in charts.last_specs}
                 for path in self.last_charts:
-                    print(f"  Chart: {path}")
+                    self._emit("chart", f"  Chart: {path}", path=str(path))
+                self.last_result = {"answer": answer, "unverified": numbers + citations, "revised": revised,
+                                    "charts": [str(p) for p in self.last_charts], "tools": trail,
+                                    "tokens": self.last_tokens, "backend": groq_client.last_provider}
                 self.remember(question, answer)
                 return answer
             messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls})
@@ -508,7 +557,9 @@ class Analyst:
                     if name not in ("search_papers", "search_literature", "search_evaluations"):
                         self._structured.append(json.dumps(result))
                 shown = ", ".join(f"{k}={v!r}" for k, v in args.items())
-                print(f"  → {name}({shown})\n      {_summary(name, result)}", flush=True)
+                summary = _summary(name, result)
+                trail.append({"name": name, "args": args, "summary": summary})
+                self._emit("tool", f"  → {name}({shown})\n      {summary}", name=name, args=args, summary=summary)
                 messages.append({"role": "tool", "tool_call_id": call["id"],
                                  "content": json.dumps(result, ensure_ascii=False)})
         raise AssertionError("unreachable: the last round forbids tool calls")

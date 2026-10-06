@@ -37,7 +37,7 @@ won't change. This project wins on what they can't do reliably:
 | 3. Literature | Done: development library (15 papers), OpenAlex + citation checks, J-PAL's 1,318 evaluation summaries. 3ie not usable (no public API) |
 | 4. Long-run / subnational | Done: Maddison, Penn World Table 11.0, DHS surveys (with regions), Global Data Lab subnational HDI; other agencies deferred |
 | 5. Workflows | Not started |
-| 6. Interface | Not started |
+| 6. Interface | Local web UI built (`web.py`, branch `web-ui`); setup script for other users' own copies next |
 
 All Oct 6 work is on branch `after-benchmark` (uncommitted): benchmark fixes, peer groups,
 `devecon.py`, `longrun.py`, the development library, multi-column PDF extraction.
@@ -214,10 +214,15 @@ data and scripts:
 
 ## Phase 6: An interface for anyone
 
-- [ ] Local web UI: chat with inline charts and tables, one-click CSV/script download.
-- [ ] Two answer levels: plain-language by default, a "technical" toggle (definitions,
-      methods, caveats); a glossary for terms like PPP, poverty gap, HDI.
-- [ ] Show the tool trail (what was looked up) and the fact-check status on every answer.
+- [x] Local web UI (`web.py`, Oct 2026): chat with inline charts and tables, live progress,
+      data download as a zip (full series re-read from the source, what the model saw, or
+      both; run_python scripts are in the technical view). Localhost only, by design.
+- [x] Two answer levels: plain-language by default, a "technical" toggle built from the tool
+      results (no tokens) plus an optional one-request technical rewrite; a 43-term glossary.
+- [x] Tool trail and fact-check status on every answer.
+- [ ] Others use it by running their own copy (decided Oct 2026, not a public site): setup
+      script + README "Getting started"; missing pieces (Ask, Ollama, GDL, J-PAL, PWT,
+      non-Mac run_python) switch off and show on the page's Setup panel.
 
 ---
 

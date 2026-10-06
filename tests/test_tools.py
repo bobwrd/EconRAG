@@ -537,6 +537,23 @@ def test_followups_may_reuse_numbers_from_previous_answers():
     assert "these results" in analyst.SYSTEM_PROMPT and "Answer first, in plain prose" in analyst.SYSTEM_PROMPT
     assert analyst.clean_markers("Conflict matters【search_literature: Arndt et al. (2016)】; 10.4%【get_data】.") == \
         "Conflict matters (Arndt et al. (2016)); 10.4%."
+    # Nemotron's bare markers (seen in the web UI, Oct 2026)
+    assert analyst.clean_markers("only 50% (2†lines-5-9).\n* Gap: $20,950 5†L1-L4.") == "only 50%.\n* Gap: $20,950."
+
+
+def test_analyst_skips_reworded_paper_searches():
+    # the five searches from one real web-UI question (Oct 2026), ~28K tokens
+    queries = ["average upward mobility United States percentile low-income children Opportunity Atlas",
+               "average upward mobility percentile United States Opportunity Atlas average",
+               "average upward mobility percentile United States Opportunity Atlas national average",
+               "38th percentile low-income children Opportunity Atlas national average",
+               "national average upward mobility percentile low-income families 25th percentile"]
+    searched = []
+    bot = analyst.Analyst(lambda q, exclude: (searched.append(q) or "text", ["a.pdf"], [len(searched)]), ATLAS, WB)
+    results = [bot._call("search_papers", {"query": q}) for q in queries]
+    assert searched == [queries[0], queries[3], queries[4]]
+    assert "nearly the same" in results[1]["note"] and analyst._summary("search_papers", results[1])
+    assert analyst._repeated_query("microcredit impact on women", ["deworming school attendance"]) is None
 
 
 # ------------------------------------------------------------------ benchmark scorer

@@ -142,6 +142,17 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
   checks that against the label. A test fails if a PDF in docs/ has no entry.
 - `ask.py` — interactive query loop (`.venv/bin/python ask.py`). Reads questions with
   `input()`; also works with piped stdin (exits cleanly on EOF), which is how it's benchmarked.
+- `web.py` + `ui/` — local web UI (Phase 6): `.venv/bin/python web.py`, then http://127.0.0.1:8765.
+  Python's standard library only. Loads the same models as ask.py (`ask.load_models`) — run one
+  or the other, never both (8GB). Listens on 127.0.0.1 only; refuses other Host names (DNS
+  rebinding) and POSTs from other sites (Origin), because run_python runs model-written code.
+  Progress streams as one JSON object per line (the analyst's `on_event`; without it, run()
+  prints as before), the answer appears only after the fact-check. Per answer: fact-check badge,
+  charts, tool trail, Plain/Technical toggle (technical = definitions, units, notes, key values
+  and scripts read from the tool results, no tokens; "Rewrite technically" = one Groq request,
+  ~4K tokens, its own short prompt, fact-checked), data zip (full series re-read via
+  `compute.fetch`, what the model saw, or both). Glossary: hand-written `ui/glossary.json`.
+  One question at a time; answers kept in memory (last 50). Tests: `tests/test_web.py`.
 - `fred.py` — FRED client: 4 series fetched concurrently, retried on 429/5xx, cached 15 min
   in-process (local path). `search_series` / `series_stats` serve any series to the analyst
   (stats + text sparkline). Also `python fred.py` to sanity-check the API key/network.
@@ -309,7 +320,7 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
    so questions take ~30-120s of rate-limit waits; a single request over 8K fails outright
    (HTTP 413). Hence: terse tool schemas (~1.6K tokens), compact Atlas output, ~1.8K tokens
    of passages per paper search (`AGENT_PAPERS_CTX`) with already-shown chunks skipped,
-   `_fit()` trimming old tool results under `REQUEST_TOKEN_LIMIT`. Rate limits (Oct 2026): a
+   `_fit()` trimming old tool results under `REQUEST_TOKEN_LIMIT`. A paper search sharing >= 60% of its keywords with an earlier one in the same question returns a one-line "already searched" note instead of passages (`_repeated_query`; one real question spent ~28K tokens on 5 rewordings, this catches the 2 closest). Rate limits (Oct 2026): a
    per-minute 429 asking for <=10s is waited out on Groq; anything longer, the daily cap, or an
    outage sends requests to OpenRouter (`groq_client.BACKUP_AFTER_WAIT`; free Nemotron model
    by default, verified to accept our tools and parameters) until Groq's limit clears — waiting

@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Development Economics Assistant</title>
+<link rel="stylesheet" href="/style.css">
+<script src="/app.js" defer></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <h1>Development Economics Assistant</h1>
+    <p class="local" id="local">Running on this computer only — other computers can't connect.</p>
+  </div>
+  <nav>
+    <button type="button" id="glossary-btn" class="ghost">Glossary</button>
+    <button type="button" id="setup-btn" class="ghost">Setup</button>
+    <button type="button" id="reset-btn" class="ghost" title="Forget earlier questions (follow-ups use the last two)">New conversation</button>
+  </nav>
+</header>
+
+<aside id="setup" class="panel" hidden>
+  <h2>What's set up on this computer</h2>
+  <ul id="setup-list"></ul>
+  <p class="muted">Missing pieces are switched off; everything else still works.</p>
+</aside>
+
+<aside id="glossary" class="panel" hidden>
+  <h2>Glossary</h2>
+  <input type="search" id="glossary-filter" placeholder="Filter terms" aria-label="Filter glossary terms">
+  <dl id="glossary-list"></dl>
+</aside>
+
+<main id="log" aria-live="polite">
+  <section id="intro" class="intro">
+    <p>Ask about development economics anywhere, or economic opportunity in the US. Every number comes from
+      a live data source and is fact-checked; each answer shows what was looked up and lets you download the data.</p>
+    <div class="examples" id="examples">
+      <button type="button">How has extreme poverty changed in Ethiopia since 2000?</button>
+      <button type="button">Is India's GDP per person above $3,000?</button>
+      <button type="button">Do cash transfers improve children's schooling?</button>
+      <button type="button">Compare life expectancy in Kenya, Ghana and Nigeria since 1990</button>
+    </div>
+  </section>
+</main>
+
+<form id="ask" class="composer">
+  <textarea id="question" rows="2" placeholder="Ask a question…  (Enter to send, Shift+Enter for a new line)" aria-label="Question"></textarea>
+  <button type="submit" id="send">Ask</button>
+</form>
+
+<div id="tip" role="tooltip" hidden></div>
+
+<template id="answer-tpl">
+  <article class="turn">
+    <p class="q"></p>
+    <div class="a">
+      <ul class="progress"></ul>
+      <div class="result" hidden>
+        <div class="bar">
+          <span class="badge"></span>
+          <div class="seg" role="tablist">
+            <button type="button" role="tab" class="on" data-view="plain">Plain</button>
+            <button type="button" role="tab" data-view="technical">Technical</button>
+          </div>
+        </div>
+        <div class="unverified" hidden></div>
+        <div class="view plain md"></div>
+        <div class="view technical" hidden>
+          <div class="tech-items"></div>
+          <div class="rewrite">
+            <button type="button" class="rewrite-btn">Rewrite this answer technically</button>
+            <span class="muted">One extra request (~4K of your Groq tokens). Fact-checked like the answer.</span>
+            <div class="rewrite-out md"></div>
+          </div>
+        </div>
+        <div class="charts"></div>
+        <details class="trail">
+          <summary>What I looked up</summary>
+          <ul></ul>
+        </details>
+        <div class="foot">
+          <label>Download data
+            <select class="dl-kind">
+              <option value="both">Both (zip)</option>
+              <option value="full">Full series (zip)</option>
+              <option value="seen">What the model saw (zip)</option>
+            </select>
+          </label>
+          <a class="dl button" href="#" download>Download</a>
+          <span class="meta muted"></span>
+        </div>
+      </div>
+    </div>
+  </article>
+</template>
+</body>
+</html>

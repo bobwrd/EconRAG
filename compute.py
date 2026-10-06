@@ -18,6 +18,7 @@ public web UI (Phase 6), run it in a container or VM instead.
 
 import json
 import math
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -111,6 +112,9 @@ def fetch(spec: dict, wb=None, longrun=None, gdl=None) -> tuple[dict[str, dict],
 
 def run(code: str, data: dict[str, dict], names: dict[str, str]) -> dict:
     """Runs `code` in the sandbox with DATA and NAMES defined; returns its printed output."""
+    if shutil.which("sandbox-exec") is None:  # never run model-written code unsandboxed
+        return {"error": "run_python is off on this computer: it needs macOS's sandbox-exec. "
+                         "Answer without the calculation and say it couldn't be run."}
     with tempfile.TemporaryDirectory(prefix="run_python_") as tmp:
         tmp = str(Path(tmp).resolve())
         data_file = Path(tmp) / "data.json"

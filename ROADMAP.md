@@ -35,7 +35,7 @@ won't change. This project wins on what they can't do reliably:
 | 1. Core data | Done except Our World in Data series beyond Maddison |
 | 2. Computation | Helper library done (`devecon.py`); `run_python` tool and charts not started |
 | 3. Literature | Development library (15 papers), OpenAlex, citation checks done; RCT databases not started |
-| 4. Long-run / subnational | Maddison live; Penn World Table blocked; subnational not started |
+| 4. Long-run / subnational | Maddison and Penn World Table 11.0 live; subnational not started |
 | 5. Workflows | Not started |
 | 6. Interface | Not started |
 
@@ -152,11 +152,15 @@ retrieval code), `get_data(source, series, countries, years)` → computed stats
       1; no population). `longrun.py`, `source="longrun"`: per-country stats, two-country
       comparison with ratios, overtaking and divergence years (e.g. South Korea passed Ghana in
       1967). Tests check exact values from the file.
-- [ ] **Penn World Table 11.0**: blocked — its only host (dataverse.nl) serves a bot check that
-      times out for scripts and, on Oct 6, in the user's browser too. Code is ready (growth
-      accounting into capital, schooling, TFP; tested on fixture files): save `pwt110.xlsx`
-      into `data/longrun/` and run `longrun.py --import`. Alternative if it stays blocked: the
-      PWT 10.01 series FRED republishes (already have a FRED key), or the CRAN `pwt10` package.
+- [x] **Penn World Table 11.0** via FRED (`longrun.py --import-fred-pwt`, Oct 2026): the
+      official host (dataverse.nl) serves a bot check that times out for scripts and browsers,
+      but FRED republishes the full 11.0 release ("Penn World Table 11.0", data to 2023, 2021
+      US$): 1,902 series, 167 of PWT's 185 countries, 10,279 country-years, ~30 min one-time
+      import at FRED's rate limit. FRED's country code is ISO2 + "A" (KRA = Korea), mapped via
+      the World Bank's country list. Growth accounting works, e.g. South Korea 1960-2019: output
+      per worker 4.55%/yr = capital 2.50 + schooling 0.72 + TFP 1.34 (PWT's own TFP: 1.46).
+      Note PWT and Maddison can disagree (Korea passes Ghana in 1975 in PWT's rgdpe, 1967 in
+      Maddison); results name their source. Not yet in the benchmark.
 - [ ] Later, if useful: WHO GHO (health), UNESCO UIS (education), FAOSTAT (agriculture),
       ILOSTAT (labor), OECD CRS (aid flows).
 

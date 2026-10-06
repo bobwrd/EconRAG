@@ -155,9 +155,12 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
   stats or all-economy rankings, and convention `NOTES` attached to results (survey years
   for poverty, PPP vs market rates, current vs constant prices). Catalog cached in
   `data/worldbank/` (delete to refresh). `python worldbank.py "extreme poverty" Ethiopia`.
-- `longrun.py` — Maddison Project 2023 + Penn World Table 11.0 (local files in `data/longrun/`,
-  saved by hand — dataverse.nl serves a bot challenge to scripts — then `python longrun.py --import`,
-  which converts the xlsx to CSV with the standard library). The analyst's `source="longrun"`:
+- `longrun.py` — Maddison Project 2023 + Penn World Table 11.0, local files in `data/longrun/`.
+  The official xlsx files sit behind dataverse.nl's bot check (times out for scripts and, Oct
+  2026, browsers too), so: Maddison from Our World in Data's CSV (`--import`; GDP per capita
+  only) and PWT from FRED's copy of the 11.0 release (`--import-fred-pwt`: 1,902 series, 167
+  countries, ~30 min once; FRED's country code is ISO2 + "A", e.g. KRA = Korea). The official
+  xlsx files, if ever saved there, still work via `--import`. The analyst's `source="longrun"`:
   per-country stats, 2+ countries add ratios/overtaking/divergence year, series
   `pwt.growth_accounting` splits growth per worker into capital, schooling and TFP.
 - `devecon.py` — tested development-economics formulas (CAGR, doubling time, rebasing, FGT poverty

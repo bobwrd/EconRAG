@@ -236,6 +236,21 @@ def test_analyst_routes_longrun_source():
     assert "needs `countries`" in bot._call("get_data", {"source": "longrun", "series": "mpd.gdppc"})["error"]
 
 
+def test_fred_pwt_ids_map_iso2_codes():
+    from longrun import fred_pwt_id
+    iso3 = {"KR": "KOR", "GH": "GHA", "US": "USA"}
+    assert fred_pwt_id("RGDPNAKRA666NRUG", iso3) == ("KOR", "rgdpna")  # KRA = KR + annual, not ISO3
+    assert fred_pwt_id("HCIYISGHA066NRUG", iso3) == ("GHA", "hc")
+    assert fred_pwt_id("CSHICPUSA156NRUG", iso3) == ("USA", "csh_i")
+    assert fred_pwt_id("RGDPCHKRA625NUPN", iso3) is None  # older PWT vintage
+    assert fred_pwt_id("PLGDPOKRA670NRUG", iso3) is None  # a variable we don't use
+    try:
+        fred_pwt_id("RGDPNAZZA666NRUG", iso3)
+    except KeyError:
+        return
+    raise AssertionError("expected KeyError for an unknown country code")
+
+
 def test_growth_accounting_refuses_without_inputs():
     try:
         LR.growth_accounting("Ghana")  # fixture Ghana has no hc / labsh
@@ -283,7 +298,10 @@ def test_real_pwt_growth_accounting_runs_for_korea():
     r = g["growth_pct_per_year"]
     total = r["capital_deepening_contribution"] + r["human_capital_contribution"] + r["tfp_contribution"]
     assert abs(total - r["output_per_worker"]) < 0.02
-    assert r["output_per_worker"] > 3 and 0.2 < g["capital_share_alpha"] < 0.6, g
+    # exact values: PWT 11.0 via FRED, imported Oct 2026
+    assert r == {"output_per_worker": 4.55, "capital_deepening_contribution": 2.5,
+                 "human_capital_contribution": 0.72, "tfp_contribution": 1.34}, r
+    assert g["capital_share_alpha"] == 0.503 and g["pwt_own_tfp_growth_pct_per_year"] == 1.46, g
 
 
 # ------------------------------------------------------------------ runner

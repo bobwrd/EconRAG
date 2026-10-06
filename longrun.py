@@ -198,6 +198,7 @@ def _latest(directory: Path, pattern: str) -> Path | None:
 def import_raw(directory: Path = DATA_DIR) -> dict:
     """Converts the official xlsx files in `directory` into maddison.csv, pwt.csv
     and meta.json. Run once after downloading (or re-downloading) them."""
+    old = json.loads((directory / "meta.json").read_text()) if (directory / "meta.json").exists() else {}
     meta = {"sources": {}}
     mpd = _latest(directory, "mpd*.xlsx")
     if mpd:
@@ -249,10 +250,91 @@ def import_raw(directory: Path = DATA_DIR) -> dict:
         v = version.group(1) if version else "?"
         meta["sources"]["pwt"] = {"file": pwt.name, "version": f"{v[:-1]}.{v[-1]}" if len(v) > 1 else v,
                                   "legend": legend}
+    if "pwt" not in meta["sources"] and old.get("sources", {}).get("pwt", {}).get("via"):
+        meta["sources"]["pwt"] = old["sources"]["pwt"]  # pwt.csv from import_fred_pwt: keep it
     if not meta["sources"]:
         raise FileNotFoundError(f"no mpd*.xlsx, {OWID_MPD} or pwt*.xlsx in {directory}/ — see longrun.py's docstring")
     (directory / "meta.json").write_text(json.dumps(meta, indent=1))
     return meta
+
+
+# PWT column -> FRED series-id prefix. FRED republishes the PWT release as one
+# series per country and variable, e.g. RGDPNAKRA666NRUG = rgdpna for KOR
+# ("NRUG" = from the University of Groningen); the 3-digit unit code varies.
+FRED_PWT = {"rgdpe": "RGDPES", "rgdpo": "RGDPOS", "rgdpna": "RGDPNA", "pop": "POPTTL", "emp": "EMPENG",
+            "avh": "AVHWPE", "hc": "HCIYIS", "cn": "CKSPPP", "rnna": "RKNANP", "ctfp": "CTFPPP",
+            "rtfpna": "RTFPNA", "labsh": "LABSHP", "csh_i": "CSHICP"}
+FRED_PWT_PAUSE = 0.55  # seconds between requests: FRED allows ~120 a minute
+
+
+def _iso2_to_iso3() -> dict[str, str]:
+    """FRED's country code is ISO2 + "A" (annual): KRA = Korea, not ISO3. One World
+    Bank request maps them; Taiwan isn't in the World Bank's list."""
+    import requests
+    r = requests.get("https://api.worldbank.org/v2/country", params={"format": "json", "per_page": 400}, timeout=30)
+    r.raise_for_status()
+    return {c["iso2Code"]: c["id"] for c in r.json()[1]} | {"TW": "TWN"}
+
+
+def fred_pwt_id(series_id: str, iso3: dict[str, str]) -> tuple[str, str] | None:
+    """(ISO3, PWT column) for a FRED PWT series id, e.g. RGDPNAKRA666NRUG ->
+    ("KOR", "rgdpna"); None if it isn't one of FRED_PWT's variables. Raises
+    KeyError for an unknown country code."""
+    m = re.fullmatch(r"([A-Z]{6})([A-Z]{2})A\d{3}NRUG", series_id)
+    prefixes = {v: k for k, v in FRED_PWT.items()}
+    if not m or m.group(1) not in prefixes:
+        return None
+    return iso3[m.group(2)], prefixes[m.group(1)]
+
+
+def import_fred_pwt(directory: Path = DATA_DIR, countries: list[str] | None = None, verbose: bool = True) -> dict:
+    """Builds pwt.csv from FRED's copy of the Penn World Table (for when the
+    official xlsx can't be downloaded: dataverse.nl challenges scripts and, at
+    times, browsers). One request per country and variable — ~1,900 for all
+    167 countries FRED carries, ~20 minutes at FRED's rate limit."""
+    import time
+    import fred
+    base = "https://api.stlouisfed.org/fred"
+    release = fred._get(f"{base}/series/release", series_id="RGDPNAKRA666NRUG")["releases"][0]
+    wanted, names, offset = {}, {}, 0
+    iso3, unmapped = _iso2_to_iso3(), set()
+    while True:
+        page = fred._get(f"{base}/release/series", release_id=release["id"], limit=1000, offset=offset)
+        for s in page["seriess"]:
+            try:
+                parsed = fred_pwt_id(s["id"], iso3)
+            except KeyError as e:
+                unmapped.add(e.args[0])
+                continue
+            if parsed and (countries is None or parsed[0] in countries):
+                code = parsed[0]
+                wanted[parsed] = s["id"]
+                names.setdefault(code, s["title"].rsplit(" for ", 1)[-1])
+        offset += 1000
+        if offset >= page["count"]:
+            break
+    data: dict[tuple[str, int], dict[str, float]] = {}
+    for i, ((code, col), sid) in enumerate(sorted(wanted.items())):
+        for obs in fred._get(fred.FRED_URL, series_id=sid)["observations"]:
+            if obs["value"] not in (".", ""):
+                data.setdefault((code, int(obs["date"][:4])), {})[col] = float(obs["value"])
+        if verbose and i % 100 == 0:
+            print(f"  {i}/{len(wanted)} series", flush=True)
+        time.sleep(FRED_PWT_PAUSE)
+    cols = list(FRED_PWT)
+    with open(directory / "pwt.csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["code", "country", "year"] + cols)
+        for (code, year), row in sorted(data.items()):
+            w.writerow([code, names[code], year] + [row.get(c, "") for c in cols])
+    meta = json.loads((directory / "meta.json").read_text()) if (directory / "meta.json").exists() else {"sources": {}}
+    version = re.search(r"\d+(\.\d+)?", release["name"])
+    meta["sources"]["pwt"] = {"file": "pwt.csv", "version": version.group() if version else "?",
+                              "via": f"FRED, St. Louis Fed (release \"{release['name']}\", {len(wanted)} series, "
+                                     f"{len(names)} countries)", "legend": {}}
+    (directory / "meta.json").write_text(json.dumps(meta, indent=1))
+    return {"series": len(wanted), "countries": len(names), "rows": len(data), "release": release["name"],
+            "skipped_unknown_codes": sorted(unmapped)}
 
 
 # ---------------------------------------------------------------- data access
@@ -578,6 +660,9 @@ class LongRun:
 if __name__ == "__main__":
     if sys.argv[1:2] == ["--import"]:
         print(json.dumps(import_raw(), indent=1)[:2000])
+        sys.exit()
+    if sys.argv[1:2] == ["--import-fred-pwt"]:  # optional ISO3 codes after it: a partial import
+        print(import_fred_pwt(countries=sys.argv[2:] or None))
         sys.exit()
     years = [int(a) for a in sys.argv[1:] if re.fullmatch(r"-?\d{1,4}", a)]
     names = [a for a in sys.argv[1:] if not re.fullmatch(r"-?\d{1,4}", a)] or ["South Korea", "Ghana"]

@@ -52,54 +52,47 @@ Online, answers come from a hosted open model (Groq, free tier). Offline, a loca
 **How it does**: on a 30-question benchmark scored by code, 27/30 (Oct 2026); a general
 chatbot without web search scored 2/25 on the same questions, mostly from outdated numbers.
 
-## Setup
+## Getting started
 
-Requires Python 3.13 and, for offline answers, [Ollama](https://ollama.com) with `phi3.5`
-pulled.
+You run your own copy, on your own computer, with your own free API keys. Nothing is paid.
+macOS works fully; on Linux everything works except `run_python` (custom calculations), which
+needs the macOS sandbox and switches itself off elsewhere. You need Python 3.11+ (3.13
+recommended) and about 3 GB of disk; 8 GB of RAM is enough.
 
 ```bash
-python3.13 -m venv .venv
-.venv/bin/pip install -r requirements.txt
+git clone https://github.com/bobwrd/ai-rag-econ-assistant.git
+cd ai-rag-econ-assistant
+python3 setup_assistant.py            # shows what's set up (changes nothing)
+python3 setup_assistant.py install    # walks through each missing step, asking first
 ```
 
-Create `.env` with your keys (free):
+The setup script asks before every download and says where it comes from and how big it is.
+Only the first two steps are needed to start; each later one adds a data source or feature,
+and whatever is missing is switched off (the web page's **Setup** panel shows what's on).
 
-```
-FRED_API_KEY=...      # https://fred.stlouisfed.org/docs/api/api_key.html
-GROQ_API_KEY=...      # https://console.groq.com — optional; without it, local-only
-OPENROUTER_API_KEY=...  # optional backup when Groq's daily limit runs out (https://openrouter.ai)
-OPENROUTER_MODEL=...    # optional; default openai/gpt-oss-120b (paid, ~1,600 questions per $1)
-```
+| Step | What it adds | Download / time |
+|---|---|---|
+| `packages` | Python packages in `.venv` (PyTorch, sentence-transformers, ...) | ~1.1 GB, a few minutes |
+| `keys` | `.env` with free keys: [Groq](https://console.groq.com/keys) (needed for the online analyst), [FRED](https://fred.stlouisfed.org/docs/api/api_key.html), [OpenRouter](https://openrouter.ai/keys) (backup) | — |
+| `atlas` | Opportunity Atlas county data + Census county list | ~3 MB |
+| `papers` | the 26-paper library (open-access PDFs from their authors' sites; one needs a browser download) | ~115 MB |
+| `index` | the paper search index (`ingest.py`) | ~2 min; 130 MB model |
+| `models` | local reranker and embedding models (otherwise downloaded on first start) | ~1.7 GB |
+| `longrun` | Maddison GDP per capita back to year 1 | <1 MB |
+| `pwt` | Penn World Table 11.0 (needs the FRED key) | ~30 min |
+| `jpal` | J-PAL's ~1,300 randomized-evaluation summaries (resumable) | ~90 min |
+| `gdl` | Global Data Lab subnational HDI — free account, so by hand; the script shows how | ~13 MB |
+| `charts` | PNG charts, world maps and animations via the bundled [Ask](vendor/ask) | ~300 MB |
+| `offline` | answers without internet: [Ollama](https://ollama.com) + `phi3.5` | ~2.2 GB |
 
-**Data** (not in the repository):
-- **Papers**: put PDFs in `docs/` (the development papers and their links are listed in
-  `PAPER_PROPOSAL.md`; each PDF needs an author-year entry in `papers.json`), then build the
-  index: `.venv/bin/python ingest.py`
-- **Opportunity Atlas** files in `data/atlas/`, from
-  [opportunityinsights.org/data](https://opportunityinsights.org/data/):
-  `county_outcomes_simple.csv` and `cty_covariates.csv`, plus the Census county list
-  `national_county.txt` (www2.census.gov/geo/docs/reference/codes/files/national_county.txt)
-- **Long-run data** in `data/longrun/`:
-  - Maddison: save
-    [Our World in Data's CSV](https://ourworldindata.org/grapher/gdp-per-capita-maddison-project-database.csv?v=1&csvType=full&useColumnShortNames=true)
-    as `owid_maddison_gdppc.csv` (or the official `mpd2023_web.xlsx`), then
-    `.venv/bin/python longrun.py --import`
-  - Penn World Table 11.0: `.venv/bin/python longrun.py --import-fred-pwt` (fetches FRED's
-    copy, ~20 minutes; or save the official `pwt110.xlsx` and use `--import`)
-- **J-PAL** evaluations: `.venv/bin/python jpal.py --fetch` (once, ~90 minutes, resumable)
-- **Global Data Lab**: with a free account, download the Subnational HDI CSV (all countries,
-  years, and indicators) from [globaldatalab.org/shdi/download](https://globaldatalab.org/shdi/download/)
-  into `data/gdl/`
-- **Charts**: give the bundled Ask its own environment once (pandas, matplotlib, geopandas):
-  `cd vendor/ask && python3.13 -m venv .venv && .venv/bin/pip install -e ".[geo]"`
-  (without it, charts fall back to simple SVG line and bar charts)
-- **World Bank** and **DHS** catalogs: downloaded automatically into `data/worldbank/` and
-  `data/dhs/` on first use
+Run one step with `python3 setup_assistant.py install papers`. World Bank, DHS and OpenAlex
+need no setup. Free tiers: Groq allows about 15 questions a day; OpenAlex about 100 searches.
 
 ## Use
 
 ```bash
-.venv/bin/python ask.py                          # ask questions interactively
+.venv/bin/python web.py                          # web page at http://127.0.0.1:8765 (this computer only)
+.venv/bin/python ask.py                          # or ask questions in the terminal
 .venv/bin/python longrun.py "South Korea" Ghana  # long-run comparison from the command line
 
 .venv/bin/python tests/test_tools.py             # tool tests (no API usage)
@@ -109,6 +102,8 @@ OPENROUTER_MODEL=...    # optional; default openai/gpt-oss-120b (paid, ~1,600 qu
 .venv/bin/python tests/test_jpal.py              # J-PAL evaluations
 .venv/bin/python tests/test_gdl.py               # Global Data Lab
 .venv/bin/python tests/test_compute.py           # run_python sandbox
+.venv/bin/python tests/test_web.py               # web UI (no API usage)
+.venv/bin/python tests/test_setup.py             # setup script
 
 .venv/bin/python eval/benchmark.py run NAME                # 45-question benchmark (resumable;
                                                            # ~2 days of Groq's free tier)

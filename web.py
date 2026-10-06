@@ -263,6 +263,8 @@ def status(app) -> dict:
         "groq": bool(groq_client.GROQ_API_KEY), "openrouter": bool(groq_client.OPENROUTER_API_KEY),
         "offline_model": ollama,
         "pieces": {
+            "Opportunity Atlas (US counties)": all((data / "atlas" / f).exists() for f in (
+                "county_outcomes_simple.csv", "cty_covariates.csv", "national_county.txt")),
             "Charts (Ask)": charts.ask_available(),
             "Offline answers (Ollama)": ollama,
             "run_python (macOS sandbox)": shutil.which("sandbox-exec") is not None,

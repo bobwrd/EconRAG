@@ -37,7 +37,7 @@ won't change. This project wins on what they can't do reliably:
 | 3. Literature | Done: development library (15 papers), OpenAlex + citation checks, J-PAL's 1,318 evaluation summaries. 3ie not usable (no public API) |
 | 4. Long-run / subnational | Done: Maddison, Penn World Table 11.0, DHS surveys (with regions), Global Data Lab subnational HDI; other agencies deferred |
 | 5. Workflows | Not started |
-| 6. Interface | Local web UI built (`web.py`, branch `web-ui`); setup script for other users' own copies next |
+| 6. Interface | Done: local web UI (`web.py`) and a setup script for other people's own copies (`setup_assistant.py`) |
 
 All Oct 6 work is on branch `after-benchmark` (uncommitted): benchmark fixes, peer groups,
 `devecon.py`, `longrun.py`, the development library, multi-column PDF extraction.
@@ -220,9 +220,10 @@ data and scripts:
 - [x] Two answer levels: plain-language by default, a "technical" toggle built from the tool
       results (no tokens) plus an optional one-request technical rewrite; a 43-term glossary.
 - [x] Tool trail and fact-check status on every answer.
-- [ ] Others use it by running their own copy (decided Oct 2026, not a public site): setup
-      script + README "Getting started"; missing pieces (Ask, Ollama, GDL, J-PAL, PWT,
-      non-Mac run_python) switch off and show on the page's Setup panel.
+- [x] Others use it by running their own copy (decided Oct 2026, not a public site):
+      `setup_assistant.py` + README "Getting started"; missing pieces (papers, Atlas, Ask,
+      Ollama, GDL, J-PAL, PWT, non-Mac run_python) switch off and show on the page's Setup panel.
+      Not yet tried end to end on a second machine.
 
 ---
 

@@ -153,6 +153,13 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
   ~4K tokens, its own short prompt, fact-checked), data zip (full series re-read via
   `compute.fetch`, what the model saw, or both). Glossary: hand-written `ui/glossary.json`.
   One question at a time; answers kept in memory (last 50). Tests: `tests/test_web.py`.
+- `setup_assistant.py` — sets up another person's own copy (standard library only, runs before
+  anything is installed): `python3 setup_assistant.py` reports each step, `install [step]` does
+  them, asking before every download with source and size. Paper PDFs come from the `url` in
+  `papers.json` (each checked Oct 2026: same byte size as the copy in docs/, where the host
+  reports one; Haushofer & Shapiro's host serves scripts a challenge page, so `browser_only`).
+  A missing paper index or Atlas now switches that tool off instead of crashing ask.py/web.py
+  (`ask.load_index`, `ask._optional`, `Analyst.atlas` loads lazily). Tests: `tests/test_setup.py`.
 - `fred.py` — FRED client: 4 series fetched concurrently, retried on 429/5xx, cached 15 min
   in-process (local path). `search_series` / `series_stats` serve any series to the analyst
   (stats + text sparkline). Also `python fred.py` to sanity-check the API key/network.

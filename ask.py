@@ -126,6 +126,10 @@ def embeddings_path(model_name: str = EMBEDDING_MODEL) -> Path:
 
 
 def load_index(model_name: str = EMBEDDING_MODEL):
+    """The paper library built by ingest.py; empty (searches switched off) until it's built."""
+    if not (DATA_DIR / "chunks.json").exists() or not embeddings_path(model_name).exists():
+        print("  No paper library yet (run ingest.py after adding PDFs to docs/): paper search is off.")
+        return [], None, None
     chunks = json.load(open(DATA_DIR / "chunks.json"))
     embeddings = np.load(embeddings_path(model_name))
     # Normalize once at load, not on every question: cosine similarity is
@@ -351,7 +355,7 @@ def load_models(pool: ThreadPoolExecutor) -> SimpleNamespace:
     model_f = pool.submit(load_embedder)
     agent_f = pool.submit(laya.load, LAYA_MODEL, device="cpu")
     tok_f = pool.submit(AutoTokenizer.from_pretrained, OLLAMA_TOKENIZER)
-    atlas_f = pool.submit(Atlas) if USE_GROQ else None
+    atlas_f = pool.submit(_optional, Atlas) if USE_GROQ else None
     wb_f = pool.submit(WorldBank) if USE_GROQ else None
     chunks, embeddings, bm25 = index_f.result()
     print(f"Loaded {len(chunks)} chunks.")
@@ -360,9 +364,20 @@ def load_models(pool: ThreadPoolExecutor) -> SimpleNamespace:
                            atlas=atlas_f.result() if atlas_f else None, wb=wb_f.result() if wb_f else None)
 
 
+def _optional(load):
+    """Data that may not be downloaded yet: None instead of a crash (the tools say it's missing)."""
+    try:
+        return load()
+    except FileNotFoundError as e:
+        print(f"  {e} — that part is off.")
+        return None
+
+
 def make_analyst(m: SimpleNamespace) -> Analyst | None:
-    return Analyst(paper_searcher(m.model, m.chunks, m.embeddings, m.bm25, m.agent, m.tokenizer),
-                   m.atlas, m.wb) if USE_GROQ else None
+    if not USE_GROQ:
+        return None
+    searcher = paper_searcher(m.model, m.chunks, m.embeddings, m.bm25, m.agent, m.tokenizer) if m.chunks else None
+    return Analyst(searcher, m.atlas, m.wb)
 
 
 def answer_locally(question: str, m: SimpleNamespace, pool: ThreadPoolExecutor) -> str:
@@ -374,7 +389,10 @@ def answer_locally(question: str, m: SimpleNamespace, pool: ThreadPoolExecutor) 
     fred_f = pool.submit(fred.get_indicator_summary) if route in ("live_data", "both") else None
 
     doc_context = None
-    if route in ("documents", "both"):
+    if route in ("documents", "both") and not m.chunks:
+        print("\n  (No paper library on this computer: answering from live data only.)")
+        fred_f = fred_f or pool.submit(fred.get_indicator_summary)
+    elif route in ("documents", "both"):
         candidates = top_k_chunks(question, m.model, m.chunks, m.embeddings, m.bm25)
         print(f"\n  Hybrid retrieval (cosine + BM25) top {len(candidates)}:")
         for chunk, score in candidates:

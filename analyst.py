@@ -301,7 +301,7 @@ class Analyst:
         ids of the chunks included); `exclude` = chunk ids already shown this
         question, so a second search doesn't spend tokens re-sending them."""
         self.search_papers = search_papers
-        self.atlas = atlas or Atlas()
+        self._atlas = atlas  # loaded on first use when not given: the data files may be missing
         self.wb = wb or worldbank.WorldBank()
         self._longrun = None  # loaded on first use: most questions don't need it
         self._jpal = None
@@ -339,6 +339,8 @@ class Analyst:
     def _call(self, name: str, args: dict) -> dict:
         try:
             if name == "search_papers":
+                if self.search_papers is None:
+                    return {"error": "the paper library isn't set up on this computer: use search_literature"}
                 earlier = _repeated_query(args["query"], self._paper_queries)
                 if earlier:  # a reworded repeat returns lower-ranked chunks and costs ~1.8K tokens
                     return {"passages": "", "note": f"nearly the same as your earlier search {earlier!r}: its "
@@ -417,6 +419,12 @@ class Analyst:
             return {"error": f"unknown tool {name}"}
         except Exception as e:  # bad arguments, FRED errors: let the model see and recover
             return {"error": f"{type(e).__name__}: {e}"}
+
+    @property
+    def atlas(self) -> Atlas:
+        if self._atlas is None:
+            self._atlas = Atlas()  # FileNotFoundError (files not downloaded) reaches the model
+        return self._atlas
 
     def gdl(self) -> gdl.GDL:
         if self._gdl is None:

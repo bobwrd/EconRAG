@@ -31,7 +31,8 @@ ASK_PY = ASK_DIR / ".venv" / ("Scripts/python.exe" if WINDOWS else "bin/python")
 DATA = ROOT / "data"
 DOCS = ROOT / "docs"
 ENV = ROOT / ".env"
-PACKAGES = ["laya", "sentence_transformers", "transformers", "torch", "pdfplumber", "dotenv", "requests", "scipy"]
+PACKAGES = ["laya", "sentence_transformers", "transformers", "torch", "pdfplumber", "dotenv", "requests", "scipy",
+            "fpdf", "docx"]
 ATLAS_FILES = {
     "county_outcomes_simple.csv": ("https://opportunityinsights.org/wp-content/uploads/2018/10/county_outcomes_simple.csv", "1.7 MB"),
     "cty_covariates.csv": ("https://opportunityinsights.org/wp-content/uploads/2018/12/cty_covariates.csv", "1.1 MB"),

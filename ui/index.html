@@ -14,6 +14,10 @@
     <p class="local" id="local">Running on this computer only — other computers can't connect.</p>
   </div>
   <nav>
+    <div class="seg modes" role="tablist" aria-label="Mode">
+      <button type="button" role="tab" class="on" data-mode="chat">Chat</button>
+      <button type="button" role="tab" data-mode="reports">Reports</button>
+    </div>
     <button type="button" id="glossary-btn" class="ghost">Glossary</button>
     <button type="button" id="setup-btn" class="ghost">Setup</button>
     <button type="button" id="reset-btn" class="ghost" title="Forget earlier questions (follow-ups use the last two)">New conversation</button>
@@ -43,6 +47,27 @@
       <button type="button">Compare life expectancy in Kenya, Ghana and Nigeria since 1990</button>
     </div>
   </section>
+</main>
+
+<main id="reports-view" hidden>
+  <form id="report-form" class="report-form">
+    <h2>Compare countries</h2>
+    <p class="muted">A report built from World Bank data: Python fetches every number and writes every table;
+      the model only writes a short summary (one request, fact-checked). Download it as PDF, Word, Markdown, LaTeX,
+      or the data itself.</p>
+    <label>Countries <span class="muted">(2–6, separated by commas)</span>
+      <input type="text" id="r-countries" placeholder="Kenya, Ghana, Nigeria" autocomplete="off" required>
+    </label>
+    <fieldset>
+      <legend>Topics</legend>
+      <div id="r-topics" class="topics"></div>
+    </fieldset>
+    <label>Extra indicators <span class="muted">(optional: a World Bank id or a few words, separated by commas)</span>
+      <input type="text" id="r-indicators" placeholder="female labor force participation, NY.GDP.MKTP.KD.ZG" autocomplete="off">
+    </label>
+    <button type="submit" id="r-make">Make report</button>
+  </form>
+  <div id="report-list"></div>
 </main>
 
 <form id="ask" class="composer">

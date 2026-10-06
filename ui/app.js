@@ -333,6 +333,106 @@ async function ask(question) {
   }
 }
 
+// ------------------------------------------------------------ reports
+async function readStream(res, onEvent) {
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "", done = false;
+  while (!done) {
+    const chunk = await reader.read();
+    done = chunk.done;
+    buf += decoder.decode(chunk.value || new Uint8Array(), {stream: !done});
+    let nl;
+    while ((nl = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, nl).trim();
+      buf = buf.slice(nl + 1);
+      if (line) onEvent(JSON.parse(line));
+    }
+  }
+}
+
+const FORMAT_LABELS = {pdf: "PDF", docx: "Word", md: "Markdown (zip)", tex: "LaTeX (zip)", bib: "BibTeX", data: "Data (zip)"};
+
+function tableHtml(t) {
+  return '<div class="table"><table><thead><tr>' + t.columns.map(c => `<th>${esc(c)}</th>`).join("") +
+    "</tr></thead><tbody>" + t.rows.map(r => "<tr>" + r.map((c, i) =>
+      `<td${i ? ' class="num"' : ""}>${esc(c)}</td>`).join("") + "</tr>").join("") + "</tbody></table></div>";
+}
+
+function renderReport(card, r) {
+  const s = r.summary;
+  const badgeHtml = s.status === "ok"
+    ? '<span class="badge ok">✓ Every number in the summary is in the data</span><span class="muted badge-note">Wording isn\'t checked.</span>'
+    : s.status === "unverified"
+      ? `<span class="badge warn">⚠ Not found in the data: ${esc(s.unverified.join(", "))}</span>`
+      : `<span class="badge neutral">No written summary: ${esc(s.reason || "model unavailable")}</span>`;
+  let h = `<h2 class="r-title">${esc(r.title)}</h2><p class="muted">Made ${esc(r.created.replace("T", " "))}` +
+    (s.tokens ? ` · ${s.tokens.toLocaleString()} tokens` : "") + "</p>";
+  h += '<div class="downloads">' + Object.keys(r.formats).map(f =>
+    `<a class="button" href="/api/report?id=${r.id}&fmt=${f}" download>${FORMAT_LABELS[f] || f}</a>`).join("") + "</div>";
+  h += `<div class="bar">${badgeHtml}</div>`;
+  if (s.text) h += `<div class="md r-summary">${markdown(s.text)}</div>`;
+  for (const sec of r.sections) {
+    h += `<section class="r-section"><h3>${esc(sec.heading)}</h3>${tableHtml(sec.table)}`;
+    if (sec.notes.length) h += "<ul class=\"notes\">" + sec.notes.map(n => `<li>${esc(n)}</li>`).join("") + "</ul>";
+    if (sec.charts.length) h += '<div class="charts">' + sec.charts.map(c =>
+      `<a href="${c}" target="_blank" rel="noopener"><img src="${c}" alt="Chart for ${esc(sec.heading)}" loading="lazy"></a>`).join("") + "</div>";
+    h += "</section>";
+  }
+  h += "<h3>About this report</h3><ul class=\"notes\">" + r.about.map(a => `<li>${esc(a)}</li>`).join("") + "</ul>";
+  h += "<h3>Sources</h3>" + r.sources.map(src => `<p class="muted">${esc(src.author.replace(/[{}]/g, ""))}, ` +
+    `<em>${esc(src.title)}</em> (accessed ${esc(src.accessed || "")}). ${esc(src.note || "")}</p>`).join("");
+  card.innerHTML = h;
+  const summary = $(".r-summary", card);
+  if (summary) highlightTerms(summary);
+}
+
+async function makeReport() {
+  if (busy) return;
+  const topics = [...document.querySelectorAll("#r-topics input:checked")].map(i => i.value);
+  const body = {kind: "compare", countries: $("#r-countries").value,
+    topics, indicators: $("#r-indicators").value.split(",").map(x => x.trim()).filter(Boolean)};
+  busy = true;
+  $("#r-make").disabled = true;
+  const card = document.createElement("article");
+  card.className = "a report";
+  const steps = document.createElement("ul");
+  steps.className = "progress";
+  card.append(steps);
+  $("#report-list").prepend(card);
+  const add = text => { const li = document.createElement("li"); li.className = "step"; li.textContent = text; steps.append(li); };
+  add("Starting…");
+  try {
+    const res = await fetch("/api/report", {method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body)});
+    if (!res.ok) throw new Error((await res.json()).error || res.statusText);
+    let finished = false;
+    await readStream(res, ev => {
+      if (ev.kind === "done") { finished = true; renderReport(card, ev); }
+      else if (ev.kind === "error") throw new Error(ev.text);
+      else add(ev.text);
+    });
+    if (!finished) throw new Error("The connection closed before the report was ready.");
+  } catch (e) {
+    const err = document.createElement("p");
+    err.className = "err";
+    err.textContent = "Couldn't make the report: " + e.message;
+    card.append(err);
+  } finally {
+    busy = false;
+    $("#r-make").disabled = false;
+  }
+}
+
+function setMode(mode) {
+  document.querySelectorAll(".modes button").forEach(b => b.classList.toggle("on", b.dataset.mode === mode));
+  $("#log").hidden = mode !== "chat";
+  $("#ask").hidden = mode !== "chat";
+  $("#reset-btn").hidden = mode !== "chat";
+  $("#reports-view").hidden = mode !== "reports";
+  try { localStorage.setItem("mode", mode); } catch (e) { /* private window */ }
+}
+
 // ------------------------------------------------------------ page setup
 async function loadStatus() {
   try {
@@ -349,6 +449,8 @@ async function loadStatus() {
     if (!s.groq && !s.offline_model) {
       $("#setup").hidden = false;
     }
+    $("#r-topics").innerHTML = Object.entries(s.report_topics).map(([k, label]) =>
+      `<label><input type="checkbox" value="${esc(k)}"${s.report_default_topics.includes(k) ? " checked" : ""}> ${esc(label)}</label>`).join("");
   } catch (e) { /* the page still works */ }
 }
 
@@ -383,5 +485,10 @@ document.addEventListener("DOMContentLoaded", () => {
     note.textContent = "New conversation — earlier questions are forgotten";
     $("#log").append(note);
   });
+  document.querySelectorAll(".modes button").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
+  $("#report-form").addEventListener("submit", e => { e.preventDefault(); makeReport(); });
+  let mode = "chat";
+  try { mode = localStorage.getItem("mode") || "chat"; } catch (e) { /* private window */ }
+  setMode(mode);
   q.focus();
 });

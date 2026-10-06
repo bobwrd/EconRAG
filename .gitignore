@@ -13,6 +13,7 @@ data/
 x
 eval/external/
 
-# charts drawn after each answer
+# charts drawn after each answer, and reports made from the command line
 charts/
+reports/
 vendor/ask/.venv/

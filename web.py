@@ -33,7 +33,9 @@ from urllib.parse import parse_qs, urlparse
 import charts
 import compute
 import groq_client
+import report_export
 import verify
+import workflows
 from groq_client import GroqUnavailable
 
 ROOT = Path(__file__).resolve().parent
@@ -273,6 +275,8 @@ def status(app) -> dict:
             "Long-run data (Maddison/PWT)": (data / "longrun").exists() and any((data / "longrun").iterdir()),
         },
         "papers": len(app.models.chunks) if app.models else 0,
+        "report_topics": {t: workflows.TOPIC_TITLES[t] for t in workflows.TOPICS},
+        "report_default_topics": workflows.DEFAULT_TOPICS,
     }
 
 
@@ -285,16 +289,41 @@ class App:
         self.answer_locally = answer_locally  # (question) -> str, or None when offline isn't possible
         self.lock = threading.Lock()  # one question (or rewrite) at a time
         self.answers: dict[str, dict] = {}
+        self.reports: dict[str, dict] = {}  # report id -> report (workflows.py), for downloads
         self.next_id = 1
+        self._wb = None
         self.warm = None  # ask.warm_up running between questions
 
-    def store(self, record: dict) -> str:
+    def store(self, record: dict, where: dict | None = None) -> str:
+        where = self.answers if where is None else where
         rid = str(self.next_id)
         self.next_id += 1
-        self.answers[rid] = record
-        for old in list(self.answers)[:-KEEP_ANSWERS]:
-            del self.answers[old]
+        where[rid] = record
+        for old in list(where)[:-KEEP_ANSWERS]:
+            del where[old]
         return rid
+
+    def wb(self):
+        """The World Bank client already loaded for the analyst, or a new one (reports work without Groq)."""
+        if self.analyst:
+            return self.analyst.wb
+        if self._wb is None:
+            from worldbank import WorldBank
+            self._wb = WorldBank()
+        return self._wb
+
+    def report(self, params: dict, emit) -> dict:
+        """Builds a report (workflows.py) and returns it as the page shows it."""
+        if params.get("kind") != "compare":
+            raise ValueError("unknown report kind")
+        countries = params.get("countries") or []
+        if isinstance(countries, str):
+            countries = [c for c in re.split(r"[,;\n]+", countries) if c.strip()]
+        indicators = [i for i in params.get("indicators") or [] if str(i).strip()]
+        report = workflows.compare(self.wb(), countries, params.get("topics") or None, indicators,
+                                   emit=lambda kind, text: emit({"kind": kind, "text": text}))
+        rid = self.store(report, self.reports)
+        return report_view(report, rid)
 
     def ask(self, question: str, emit) -> dict:
         """Answers one question, sending progress through emit(event dict)."""
@@ -334,6 +363,16 @@ class App:
         return {**result, "id": rid, "seconds": round(time.time() - started),
                 "charts": ["/charts/" + Path(p).name for p in result["charts"]],
                 "technical": technical_details(record["evidence"]["results"])}
+
+
+def report_view(report: dict, rid: str) -> dict:
+    """The report as JSON for the page: no raw tool results, chart paths as URLs."""
+    view = {k: v for k, v in report.items() if k not in ("results", "facts")}
+    view["sections"] = [{**sec, "charts": ["/charts/" + Path(p).name for p in sec["charts"]]}
+                        for sec in report["sections"]]
+    view["id"] = rid
+    view["formats"] = {f: name for f, (name, _) in report_export.FORMATS.items()}
+    return view
 
 
 def _print(text: str):
@@ -396,6 +435,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, b"not found", "text/plain")
         if url.path == "/api/status":
             return self._json(status(self.app))
+        if url.path == "/api/report":
+            query = parse_qs(url.query)
+            report = self.app.reports.get(query.get("id", [""])[0])
+            fmt = query.get("fmt", [""])[0]
+            if not report or fmt not in report_export.FORMATS:
+                return self._json({"error": "unknown report or format"}, 404)
+            name, ctype = report_export.FORMATS[fmt]
+            filename = f"{workflows.slug(report['title'])}_{name}"
+            return self._send(200, report_export.export(report, fmt, self.app.wb()), ctype,
+                              {"Content-Disposition": f'attachment; filename="{filename}"'})
         if url.path == "/api/data":
             query = parse_qs(url.query)
             record = self.app.answers.get(query.get("id", [""])[0])
@@ -415,6 +464,9 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/api/ask":
             return self._ask(str(self._body().get("question") or "").strip()[:2000])
+        if path == "/api/report":
+            params = self._body()
+            return self._stream(lambda emit: self.app.report(params, emit), f"Report: {params.get('countries')}")
         if path == "/api/technical":
             record = self.app.answers.get(str(self._body().get("id")))
             if not record or not record["evidence"]["results"]:
@@ -437,8 +489,12 @@ class Handler(BaseHTTPRequestHandler):
     def _ask(self, question: str):
         if not question:
             return self._json({"error": "empty question"}, 400)
+        return self._stream(lambda emit: self.app.ask(question, emit), f"Question: {question}")
+
+    def _stream(self, work, label: str):
+        """Runs work(emit) while streaming its progress, one JSON object per line."""
         if not self.app.lock.acquire(blocking=False):
-            return self._json({"error": "Already answering a question — one at a time."}, 409)
+            return self._json({"error": "Busy with another question or report — one at a time."}, 409)
         # progress streams as one JSON object per line while the question runs
         self.send_response(200)
         self.send_header("Content-Type", "application/x-ndjson")
@@ -458,8 +514,8 @@ class Handler(BaseHTTPRequestHandler):
                 connected = False  # page closed: finish the answer anyway, it stays in memory
 
         try:
-            print(f"\nQuestion: {question}", flush=True)
-            emit({"kind": "done", **self.app.ask(question, emit)})
+            print(f"\n{label}", flush=True)
+            emit({**work(emit), "kind": "done"})  # last: a report has a "kind" of its own
         except Exception as e:
             emit({"kind": "error", "text": f"{type(e).__name__}: {e}"})
         finally:

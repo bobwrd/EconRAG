@@ -46,6 +46,12 @@ market-rate and PPP values, current vs constant prices are flagged, newer data i
 when the model asks for an old year, and correlations are stated with their direction in
 words.
 
+**Reports** (in the web page's Reports tab, or from the command line): compare 2-6 countries on
+income, growth, poverty, health, education and more. Python fetches every number and builds every
+table; the model writes only a short summary, which is fact-checked. Download as PDF, Word,
+Markdown, LaTeX (with BibTeX), or the data itself. Country briefs, poverty profiles and
+"what works" reviews are next.
+
 Online, answers come from a hosted open model (Groq, free tier). Offline, a local pipeline
 (Ollama + `phi3.5`) answers from the paper library.
 
@@ -93,6 +99,7 @@ need no setup. Free tiers: Groq allows about 15 questions a day; OpenAlex about 
 ```bash
 .venv/bin/python web.py                          # web page at http://127.0.0.1:8765 (this computer only)
 .venv/bin/python ask.py                          # or ask questions in the terminal
+.venv/bin/python workflows.py compare Kenya Ghana Nigeria   # a report: PDF, Word, Markdown, LaTeX, data
 .venv/bin/python longrun.py "South Korea" Ghana  # long-run comparison from the command line
 
 .venv/bin/python tests/test_tools.py             # tool tests (no API usage)
@@ -104,6 +111,7 @@ need no setup. Free tiers: Groq allows about 15 questions a day; OpenAlex about 
 .venv/bin/python tests/test_compute.py           # run_python sandbox
 .venv/bin/python tests/test_web.py               # web UI (no API usage)
 .venv/bin/python tests/test_setup.py             # setup script
+.venv/bin/python tests/test_reports.py           # reports (World Bank data, no API usage)
 
 .venv/bin/python eval/benchmark.py run NAME                # 45-question benchmark (resumable;
                                                            # ~2 days of Groq's free tier)

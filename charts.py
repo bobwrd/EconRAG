@@ -126,7 +126,7 @@ def bar_chart(bars: list[tuple[str, float]], title: str, units: str, source: str
     return "\n".join(out + ["</svg>"])
 
 
-def _points(entry: dict, sample_key_prefix: str, extremes: tuple[str, ...], xkey: str) -> list[tuple[float, float]]:
+def _points(entry: dict, sample_key_prefix: str | tuple[str, ...], extremes: tuple[str, ...], xkey: str) -> list[tuple[float, float]]:
     pts = []
     for k, v in entry.items():
         if k.startswith(sample_key_prefix) and isinstance(v, list):
@@ -134,7 +134,7 @@ def _points(entry: dict, sample_key_prefix: str, extremes: tuple[str, ...], xkey
     for k in extremes:
         if isinstance(entry.get(k), dict) and entry[k].get("value") is not None:
             pts.append((_x(entry[k][xkey]), float(entry[k]["value"])))
-    return pts
+    return sorted(set(pts))
 
 
 ATLAS_SOURCE = "Opportunity Atlas (Opportunity Insights)"
@@ -220,7 +220,8 @@ def specs_for(name: str, args: dict, result: dict) -> list[dict]:
                     "source": f"FRED, {result['series_id']} (St. Louis Fed)"})
     elif "economies" in result:  # World Bank: one line per economy, a map when there are many
         wb_source = f"World Bank, World Development Indicators ({result['indicator']})"
-        lines = {e["economy"]: _points(e, "sampled", ("first", "latest", "max", "min"), "year")
+        # "series [year, value]" when short enough to send whole, "sampled ..." otherwise
+        lines = {e["economy"]: _points(e, ("series", "sampled"), ("first", "latest", "max", "min"), "year")
                  for e in result["economies"] if "latest" in e}
         out.append({"kind": "line", "slug": result["indicator"], "lines": lines, "title": result["name"],
                     "units": "", "source": wb_source})
@@ -282,7 +283,7 @@ def specs_for(name: str, args: dict, result: dict) -> list[dict]:
         out.append({"kind": "line", "slug": result["indicator"], "lines": lines, "title": result["name"],
                     "units": result.get("unit", ""), "source": source})
     elif "countries" in result and "variable" in result:  # long-run
-        lines = {c["country"]: _points(c, "sampled", ("first", "last", "peak", "trough"), "year")
+        lines = {c["country"]: _points(c, ("series", "sampled"), ("first", "last", "peak", "trough"), "year")
                  for c in result["countries"] if "last" in c}
         out.append({"kind": "line", "slug": result["variable"], "lines": lines, "title": result["name"],
                     "units": result.get("units", ""), "source": source})
@@ -510,13 +511,15 @@ def spec_key(spec: dict) -> str:
 
 
 def auto(results: list[tuple[str, dict, dict]], out_dir: Path = OUT_DIR, wb=None, use_ask: bool | None = None,
-         question: str | None = None, previous: set[str] | None = None) -> list[Path]:
+         question: str | None = None, previous: set[str] | None = None, kinds: set[str] | None = None) -> list[Path]:
     """Draws the charts worth drawing for this question; returns the file paths.
-    Ask (vendor/ask) draws PNGs, maps, and the bubble animation; otherwise SVG."""
+    Ask (vendor/ask) draws PNGs, maps, and the bubble animation; otherwise SVG.
+    `kinds` limits the chart kinds (reports: {"line", "map"})."""
     global last_specs
     use_ask = ask_available() if use_ask is None else use_ask
-    specs = [s for name, args, result in results for s in specs_for(name, args, result)]
-    if use_ask and (question is None or WANTS["time"].search(question) or WANTS["compare"].search(question)
+    specs = [s for name, args, result in results for s in specs_for(name, args, result)
+             if kinds is None or s["kind"] in kinds]
+    if use_ask and (kinds is None or "bubble" in kinds) and (question is None or WANTS["time"].search(question) or WANTS["compare"].search(question)
                     or ASKS_CHART.search(question)):
         try:
             bubble = bubble_spec(results, wb)

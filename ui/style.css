@@ -78,7 +78,7 @@ nav { display: flex; gap: 6px; flex-wrap: wrap; }
 #glossary-list dt { font-weight: 600; margin-top: 10px; }
 #glossary-list dd { margin: 2px 0 0; color: var(--muted); }
 
-main { flex: 1; width: min(860px, calc(100% - 32px)); margin: 0 auto; padding: 20px 0 140px; }
+main, #reports-view { flex: 1; width: min(860px, calc(100% - 32px)); margin: 0 auto; padding: 20px 0 140px; }
 .intro p { color: var(--muted); max-width: 60ch; }
 .examples { display: flex; flex-wrap: wrap; gap: 8px; }
 .examples button {
@@ -184,3 +184,26 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
   .foot .meta { margin-left: 0; width: 100%; }
   .q { max-width: 100%; }
 }
+
+/* ---- mode switch and reports ---- */
+.modes { margin-right: 6px; }
+#reports-view { width: min(860px, calc(100% - 32px)); margin: 0 auto; padding: 20px 0 60px; }
+.report-form { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 16px 18px; box-shadow: var(--shadow); margin-bottom: 24px; }
+.report-form h2 { margin: 0 0 4px; font-size: 1.1rem; }
+.report-form > p { margin: 0 0 12px; }
+.report-form label { display: block; margin: 10px 0; font-weight: 600; font-size: 0.92rem; }
+.report-form input[type=text] { display: block; width: 100%; margin-top: 4px; padding: 8px 10px; font-weight: 400;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.report-form input[type=text]:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+.report-form fieldset { border: 0; padding: 0; margin: 10px 0; }
+.report-form legend { font-weight: 600; font-size: 0.92rem; margin-bottom: 4px; }
+.topics { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.topics label { display: inline-flex; align-items: center; gap: 6px; margin: 0; font-weight: 400; }
+#r-make { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 10px; padding: 10px 18px; font-weight: 600; margin-top: 6px; }
+#r-make:disabled { opacity: .5; cursor: progress; }
+.report { margin-bottom: 28px; }
+.r-title { margin: 0 0 2px; font-size: 1.25rem; }
+.r-section h3, .report h3 { font-size: 1rem; margin: 18px 0 6px; }
+.downloads { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 14px; }
+.downloads .button { font-size: 0.82rem; padding: 5px 11px; }
+.notes { font-size: 0.86rem; color: var(--muted); padding-left: 1.2em; margin: 4px 0; }

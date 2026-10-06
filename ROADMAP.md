@@ -27,7 +27,7 @@ won't change. This project wins on what they can't do reliably:
 
 ---
 
-## Status (Oct 6 2026)
+## Status (Oct 7 2026)
 
 | Phase | State |
 |---|---|
@@ -36,11 +36,11 @@ won't change. This project wins on what they can't do reliably:
 | 2. Computation | Done: `run_python` (sandboxed), `devecon.py`, automatic charts (no tokens) |
 | 3. Literature | Done: development library (15 papers), OpenAlex + citation checks, J-PAL's 1,318 evaluation summaries. 3ie not usable (no public API) |
 | 4. Long-run / subnational | Done: Maddison, Penn World Table 11.0, DHS surveys (with regions), Global Data Lab subnational HDI; other agencies deferred |
-| 5. Workflows | Not started |
+| 5. Workflows | Engine + "Compare countries" built (`workflows.py`, web Reports tab, PDF/Word/Markdown/LaTeX/BibTeX/data); country brief, poverty profile, "what works" next |
 | 6. Interface | Done: local web UI (`web.py`) and a setup script for other people's own copies (`setup_assistant.py`) |
 
-All Oct 6 work is on branch `after-benchmark` (uncommitted): benchmark fixes, peer groups,
-`devecon.py`, `longrun.py`, the development library, multi-column PDF extraction.
+The Oct 6 work (benchmark fixes, peer groups, `devecon.py`, `longrun.py`, the development library,
+multi-column PDF extraction) is merged into `main`; the 45-question benchmark hasn't been re-run on it.
 
 ## Phase 0: Measure cheaply
 
@@ -205,12 +205,16 @@ retrieval code), `get_data(source, series, countries, years)` → computed stats
 ## Phase 5: Workflows people repeat
 
 Multi-step templates built on the same tools, exportable as Markdown/LaTeX with BibTeX plus
-data and scripts:
+data (decided Oct 2026: a fixed Python recipe per report — Python gathers data and writes every table,
+one Groq request writes the summary, verify.py checks it; exports PDF, Word, Markdown, LaTeX,
+BibTeX, data zip; no reproduce script for now):
+- [x] **Engine + compare countries** (`workflows.py compare`, Oct 2026): 2-6 countries x topic
+      bundles (income, growth, poverty, health, education, infrastructure, jobs, population,
+      macro) + extra indicators; average growth computed in Python; summary ~2-5K tokens.
 - [ ] **Country brief**: growth, poverty, inequality, human development vs peers + recent research.
 - [ ] **"What works" review**: evidence on an intervention (cash transfers, deworming,
       microfinance) by outcome and region, from the RCT databases.
 - [ ] **Poverty profile**: levels, trends, survey vintages, subnational spread.
-- [ ] **Compare countries** on any set of indicators, with the conventions applied.
 
 ## Phase 6: An interface for anyone
 

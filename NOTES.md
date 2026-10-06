@@ -153,6 +153,20 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
   ~4K tokens, its own short prompt, fact-checked), data zip (full series re-read via
   `compute.fetch`, what the model saw, or both). Glossary: hand-written `ui/glossary.json`.
   One question at a time; answers kept in memory (last 50). Tests: `tests/test_web.py`.
+- `workflows.py` + `report_export.py` — reports (Phase 5). A fixed Python recipe gathers the data
+  (no model), Python computes and writes every table, then ONE Groq request without tools writes a
+  150-250 word summary from a compact fact sheet (~2-5K tokens; a chat question is 10-30K);
+  `verify.py` checks it against the fact sheet, one revision request if it fails. Without Groq the
+  report is built without a summary. So far: `compare` (2-6 countries x topic bundles in `TOPICS`
+  + extra indicators by id or words). Exports from one report dict: PDF (fpdf2; Unicode font from
+  `PDF_FONTS`, else Helvetica with "?" for non-Latin-1), Word (python-docx), Markdown/LaTeX zips
+  with charts and references.bib, BibTeX, the chat's data zip. Charts: lines (+ maps at 5+
+  countries) only — per-country peer bars and the GIF made one report take 77 s instead of 2.5 s.
+  `WINDOW` = 12 years because the World Bank tool returns at most 13 points in full. Web: the
+  Reports tab (`POST /api/report`, `GET /api/report?id=&fmt=`); CLI writes to `reports/`.
+  Found while building it: World Bank and long-run line charts (chat too) drew only first/max/min/
+  latest when a series was short enough to be labeled "series" rather than "sampled" — fixed in
+  `charts._points`. Tests: `tests/test_reports.py`.
 - `setup_assistant.py` — sets up another person's own copy (standard library only, runs before
   anything is installed): `python3 setup_assistant.py` reports each step, `install [step]` does
   them, asking before every download with source and size. Paper PDFs come from the `url` in

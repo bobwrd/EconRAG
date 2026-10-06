@@ -1,0 +1,272 @@
+"""
+Reports people repeat (ROADMAP Phase 5). Each report is a fixed recipe:
+
+  1. gather  — a fixed list of data calls to the existing modules (no model)
+  2. compute — growth rates, ranks, gaps in Python; Python writes every table
+  3. write   — ONE Groq request (no tools) turns a compact fact sheet into prose,
+               checked by verify.py; one revision request only if it fails
+  4. export  — report_export.py: PDF, Word, Markdown, LaTeX, BibTeX, data zip
+
+So tables can't contain invented numbers, a report costs ~2-5K Groq tokens
+(a chat question: 10-30K), and the same inputs give the same structure.
+Without a Groq key (or when Groq is down) the report is still built, just
+without the written summary.
+
+    .venv/bin/python workflows.py compare Kenya Ghana Nigeria
+    .venv/bin/python workflows.py compare India China --topics income,growth,health
+    .venv/bin/python workflows.py compare Peru Chile --indicators "female labor force"
+
+Files land in reports/<date>_<name>/ (gitignored). The web UI (web.py) runs the
+same recipes from its Reports tab.
+"""
+
+import argparse
+import datetime
+import json
+import re
+import sys
+from pathlib import Path
+
+import charts
+import compute
+import devecon
+import groq_client
+import verify
+from groq_client import GroqUnavailable
+
+REPORTS_DIR = Path("reports")
+MAX_COUNTRIES = 6
+WINDOW = 12            # years of history per indicator: the World Bank tool returns at most 13 points in full
+GROWTH_YEARS = 10      # "average growth over the last N years" row
+MAX_CHARTS = 8
+
+# Topic -> World Bank indicators, in table order. The first of each topic is charted.
+TOPICS = {
+    "income": ["NY.GDP.PCAP.PP.CD", "NY.GDP.PCAP.CD", "NY.GNP.PCAP.CD"],
+    "growth": ["NY.GDP.PCAP.KD.ZG"],          # plus a computed 10-year average (constant prices)
+    "poverty": ["SI.POV.DDAY", "SI.POV.LMIC", "SI.POV.GAPS", "SI.POV.GINI"],
+    "health": ["SP.DYN.LE00.IN", "SH.DYN.MORT", "SH.STA.STNT.ZS"],
+    "education": ["SE.LPV.PRIM", "SE.SEC.ENRR", "SE.ADT.LITR.ZS"],
+    "infrastructure": ["EG.ELC.ACCS.ZS", "SH.H2O.BASW.ZS", "IT.NET.USER.ZS"],
+    "jobs": ["SL.TLF.CACT.FE.ZS", "SL.AGR.EMPL.ZS", "SL.UEM.TOTL.ZS"],
+    "population": ["SP.POP.TOTL", "SP.URB.TOTL.IN.ZS"],
+    "macro": ["FP.CPI.TOTL.ZG", "GC.DOD.TOTL.GD.ZS", "NE.TRD.GNFS.ZS", "BX.TRF.PWKR.DT.GD.ZS"],
+}
+DEFAULT_TOPICS = ["income", "growth", "poverty", "health", "education"]
+TOPIC_TITLES = {"income": "Income", "growth": "Growth", "poverty": "Poverty and inequality", "health": "Health",
+                "education": "Education", "infrastructure": "Infrastructure and services", "jobs": "Jobs",
+                "population": "Population", "macro": "Macroeconomy", "extra": "Other indicators"}
+# indicators whose values come from household surveys: years differ, often old
+SURVEY_BASED = {"SI.POV.DDAY", "SI.POV.LMIC", "SI.POV.UMIC", "SI.POV.GAPS", "SI.POV.GINI", "SE.ADT.LITR.ZS",
+                "SH.STA.STNT.ZS", "SE.LPV.PRIM"}
+
+WDI_SOURCE = {"key": "worldbank_wdi", "type": "misc", "author": "{World Bank}",
+              "title": "World Development Indicators", "url": "https://databank.worldbank.org/source/world-development-indicators"}
+
+SUMMARY_PROMPT = """You write the summary at the top of a report comparing countries, for a general audience. Use ONLY the facts in the JSON below. Every number you write must appear there (you may round it as shown). Give the year with any value whose years differ across countries, and with every survey-based value (poverty, inequality, literacy, stunting, learning). When discussing income, say whether a figure is PPP (international $, best for living standards) or at market exchange rates. Describe differences only; don't explain their causes — the facts contain no evidence about causes. 150-250 words in 2-4 short paragraphs, plain markdown (bold allowed; no headings, no tables)."""
+
+
+# ------------------------------------------------------------------ formatting
+def fmt(value: float | None, indicator: str = "") -> str:
+    """How a value appears in tables and in the fact sheet (the model copies these)."""
+    if value is None:
+        return "–"
+    if indicator == "SP.POP.TOTL":
+        return f"{value / 1e6:,.1f} million"
+    if abs(value) >= 1000:
+        return f"{value:,.0f}"
+    return f"{value:,.1f}"
+
+
+def slug(text: str) -> str:
+    return re.sub(r"[^A-Za-z0-9]+", "_", text).strip("_")[:60]
+
+
+# ------------------------------------------------------------------ the model's part
+def write_summary(facts: dict, prompt: str, emit=lambda *_: None) -> dict:
+    """One request (two if the fact-check fails). Never raises: without Groq the
+    report simply has no summary."""
+    facts_text = json.dumps(facts, ensure_ascii=False, separators=(",", ":"))
+    messages = [{"role": "system", "content": prompt}, {"role": "user", "content": facts_text}]
+    tokens = 0
+    if not groq_client.GROQ_API_KEY and not groq_client.OPENROUTER_API_KEY:
+        return {"text": "", "status": "unavailable", "reason": "no GROQ_API_KEY in .env", "unverified": [], "tokens": 0}
+    try:
+        for attempt in range(2):
+            emit("step", "Writing the summary" if attempt == 0 else "Fact-check flagged numbers — asking for a fix")
+            response = groq_post({"messages": messages, "temperature": 0.2, "max_tokens": 2048,
+                                  "reasoning_effort": "low"}).json()
+            tokens += response.get("usage", {}).get("total_tokens", 0)
+            text = (response["choices"][0]["message"].get("content") or "").strip()
+            unverified = verify.unsupported_numbers(text, facts_text, "")
+            if not unverified:
+                break
+            messages += [{"role": "assistant", "content": text}, {"role": "user", "content": (
+                f"These numbers are not in the facts: {unverified}. Rewrite the summary without them "
+                "(use only numbers from the facts). Don't mention this check.")}]
+    except GroqUnavailable as e:
+        return {"text": "", "status": "unavailable", "reason": str(e)[:200], "unverified": [], "tokens": tokens}
+    return {"text": text, "status": "unverified" if unverified else "ok", "unverified": unverified,
+            "tokens": tokens, "backend": groq_client.last_provider}
+
+
+groq_post = groq_client.post  # replaced in tests
+
+
+# ------------------------------------------------------------------ compare countries
+def resolve_indicator(wb, text: str) -> str:
+    """An indicator id, or the best catalog match for a phrase ("female labor force")."""
+    if text in wb.by_id:
+        return text
+    found = wb.search(text)
+    if not found:
+        raise ValueError(f"no World Bank indicator matches {text!r}")
+    return found[0]["id"]
+
+
+def compare(wb, countries: list[str], topics: list[str] | None = None, indicators: list[str] | None = None,
+            emit=lambda *_: None) -> dict:
+    """Report comparing 2-6 countries on topic bundles and/or extra indicators."""
+    codes = list(dict.fromkeys(wb.country(c) for c in countries))
+    if not 2 <= len(codes) <= MAX_COUNTRIES:
+        raise ValueError(f"compare needs 2-{MAX_COUNTRIES} different countries (got {len(codes)})")
+    names = [wb.countries[c]["name"] for c in codes]
+    topics = [t for t in (topics or ([] if indicators else DEFAULT_TOPICS))]
+    unknown = [t for t in topics if t not in TOPICS]
+    if unknown:
+        raise ValueError(f"unknown topic(s) {unknown}; choose from {', '.join(TOPICS)}")
+    plan = [(t, i) for t in topics for i in TOPICS[t]]
+    plan += [("extra", resolve_indicator(wb, text)) for text in indicators or []]
+    start = datetime.date.today().year - WINDOW
+
+    results, sections, facts_rows, used = [], {}, [], []
+    for topic, indicator in plan:
+        emit("step", f"World Bank: {wb.by_id[indicator]['name']}")
+        args = {"series": indicator, "countries": codes, "start": start, "peers": True}
+        try:
+            result = wb.get(indicator, codes, start, None, peers=True)
+        except Exception as e:  # one failed indicator shouldn't sink the report
+            emit("step", f"  skipped {indicator}: {e}")
+            continue
+        results.append(("get_data", args, result))
+        used.append(indicator)
+        by_code = {e["code"]: e for e in result["economies"]}
+        cells, fact_values = [], {}
+        for code, name in zip(codes, names):
+            latest = by_code.get(code, {}).get("latest")
+            cells.append(f"{fmt(latest['value'], indicator)} ({latest['year']})" if latest else "–")
+            if latest:
+                fact_values[name] = {"value": fmt(latest["value"], indicator), "year": latest["year"]}
+                peers = by_code[code].get("peers", {}).get("income_group")
+                if peers and "rank" in peers:
+                    fact_values[name]["rank_in_income_group"] = f"{peers['rank']} of {peers['of']} ({peers['group']})"
+        row_name = wb.by_id[indicator]["name"]
+        sections.setdefault(topic, {"rows": [], "notes": set(), "results": []})
+        sections[topic]["rows"].append([row_name] + cells)
+        sections[topic]["results"].append(("get_data", args, result))
+        if indicator in SURVEY_BASED:
+            sections[topic]["notes"].add("Survey-based figures exist only for survey years, which differ across "
+                                         "countries and can be several years old.")
+        if indicator.startswith("NY.GDP.PCAP.PP") or indicator == "NY.GDP.PCAP.CD":
+            sections[topic]["notes"].add("PPP (international $) adjusts for price differences and is the better "
+                                         "measure of living standards; current US$ uses market exchange rates.")
+        values = [(n, by_code[c]["latest"]["value"]) for c, n in zip(codes, names) if by_code.get(c, {}).get("latest")]
+        fact = {"indicator": row_name, "values": fact_values}
+        if len(values) >= 2:
+            hi, lo = max(values, key=lambda v: v[1]), min(values, key=lambda v: v[1])
+            fact["highest"], fact["lowest"] = hi[0], lo[0]
+            if lo[1] > 0 and indicator not in SURVEY_BASED:
+                fact["highest_to_lowest_ratio"] = round(hi[1] / lo[1], 1)
+        facts_rows.append(fact)
+
+    if "growth" in topics:  # average growth, constant prices, computed here
+        emit("step", f"Computing average growth over the last {GROWTH_YEARS} years")
+        row, fact_values = growth_row(wb, codes, names)
+        if row:
+            sections.setdefault("growth", {"rows": [], "notes": set(), "results": []})
+            sections["growth"]["rows"].insert(0, row)
+            sections["growth"]["notes"].add(f"Average growth: compound annual growth of GDP per capita in constant "
+                                            f"2015 US$ (NY.GDP.PCAP.KD) over the last {GROWTH_YEARS} years with data, "
+                                            "computed here.")
+            facts_rows.insert(0, {"indicator": f"Average annual growth of GDP per capita, last {GROWTH_YEARS} years "
+                                               "(constant prices, %)", "values": fact_values})
+            used.append("NY.GDP.PCAP.KD")
+
+    emit("step", "Drawing charts")
+    headline = [sections[t]["results"][0] for t in sections if sections[t]["results"]][:MAX_CHARTS]
+    try:
+        chart_paths = [str(p) for p in charts.auto(headline, wb=wb, kinds={"line", "map"})]
+    except Exception as e:  # charts are a bonus
+        emit("step", f"  charts failed: {e}")
+        chart_paths = []
+
+    title = f"{', '.join(names[:-1])} and {names[-1]}: a comparison"
+    facts = {"countries": names, "indicators": facts_rows}
+    summary = write_summary(facts, SUMMARY_PROMPT, emit)
+    report = {
+        "kind": "compare", "title": title, "created": datetime.datetime.now().isoformat(timespec="seconds"),
+        "inputs": {"countries": names, "topics": topics, "indicators": indicators or []},
+        "summary": summary,
+        "sections": [{"heading": TOPIC_TITLES[t], "table": {"columns": ["Indicator"] + names,
+                                                            "rows": s["rows"]},
+                      "notes": sorted(s["notes"]),
+                      "charts": [p for p in chart_paths if any(r[2]["indicator"] in Path(p).name
+                                                                for r in s["results"])]}
+                     for t, s in sections.items()],
+        "about": ["Values are the latest year with data for each country (shown in brackets), from the World "
+                  "Bank's World Development Indicators, fetched when the report was made.",
+                  "Ranks within income groups compare each country with the World Bank income group it belongs to."],
+        "sources": [{**WDI_SOURCE, "note": "Indicators: " + ", ".join(dict.fromkeys(used)),
+                     "accessed": datetime.date.today().isoformat()}],
+        "facts": facts,
+        "results": results,
+    }
+    emit("step", "Done")
+    return report
+
+
+def growth_row(wb, codes: list[str], names: list[str]) -> tuple[list | None, dict]:
+    end_year = datetime.date.today().year
+    data, _ = compute.fetch({"series": "NY.GDP.PCAP.KD", "countries": codes, "start": end_year - GROWTH_YEARS - 6}, wb)
+    cells, facts = [], {}
+    for code, name in zip(codes, names):
+        series = data.get(code, {})
+        last = max(series) if series else None
+        first = last - GROWTH_YEARS if last else None
+        if last and first in series and series[first] > 0 and series[last] > 0:
+            g = devecon.cagr(series[first], series[last], GROWTH_YEARS)
+            cells.append(f"{g:.1f} ({first}-{last})")
+            facts[name] = {"value": f"{g:.1f}", "years": f"{first}-{last}"}
+        else:
+            cells.append("–")
+    if not facts:
+        return None, {}
+    return [f"Average annual growth of GDP per capita, last {GROWTH_YEARS} years (constant prices, %)"] + cells, facts
+
+
+# ------------------------------------------------------------------ command line
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(description="Build a report.", epilog=f"Topics: {', '.join(TOPICS)}")
+    sub = parser.add_subparsers(dest="kind", required=True)
+    p = sub.add_parser("compare", help=f"compare 2-{MAX_COUNTRIES} countries")
+    p.add_argument("countries", nargs="+")
+    p.add_argument("--topics", help=f"comma-separated, default {','.join(DEFAULT_TOPICS)}")
+    p.add_argument("--indicators", action="append", help="extra indicator: id or a few words (repeatable)")
+    p.add_argument("--out", default=str(REPORTS_DIR))
+    args = parser.parse_args(argv)
+
+    import report_export
+    from worldbank import WorldBank
+    wb = WorldBank()
+    report = compare(wb, args.countries, args.topics.split(",") if args.topics else None,
+                     args.indicators, emit=lambda kind, text: print(f"  {text}", flush=True))
+    folder = report_export.write_all(report, Path(args.out), wb)
+    s = report["summary"]
+    print(f"\n{report['title']}\nSummary: {s['status']}" + (f" — not verified: {s['unverified']}" if s["unverified"] else "")
+          + (f" ({s.get('reason')})" if s["status"] == "unavailable" else f", {s['tokens']} tokens")
+          + f"\nSaved in {folder}/")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

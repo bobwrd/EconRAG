@@ -475,6 +475,44 @@ def test_tool_schemas_stay_small():
     assert len(json.dumps(analyst.TOOLS)) / analyst.CHARS_PER_TOKEN < 2000
 
 
+def test_openrouter_backup_only_for_long_groq_outages():
+    import groq_client as gc
+
+    class Resp:
+        def __init__(self, status, body, retry=None):
+            self.status_code, self._body, self.headers = status, body, ({"retry-after": retry} if retry else {})
+            self.text = json.dumps(body)
+
+        def json(self):
+            return self._body
+
+    calls = []
+
+    def fake_post(url, **kw):
+        calls.append((url, kw["json"]["model"]))
+        if "groq" in url:
+            return replies.pop(0)
+        return Resp(200, {"choices": [{"message": {"content": "ok"}}]})
+
+    saved = (gc._session.post, gc.OPENROUTER_API_KEY, gc._groq_blocked_until)
+    gc._session.post, gc.OPENROUTER_API_KEY, gc._groq_blocked_until = fake_post, "test-key", 0.0
+    try:
+        replies = [Resp(429, {"error": {"message": "Rate limit ... tokens per minute"}}, "20")]
+        try:
+            gc.post({"messages": []})
+            raise AssertionError("a per-minute limit should be waited out, not sent to OpenRouter")
+        except gc.GroqUnavailable:
+            pass
+        replies = [Resp(429, {"error": {"message": "Rate limit ... tokens per day (TPD)"}}, "700")]
+        assert gc.post({"messages": []}).json()["choices"][0]["message"]["content"] == "ok"
+        assert gc.last_provider == "openrouter" and calls[-1] == (gc.OPENROUTER_URL, gc.OPENROUTER_MODEL)
+        gc.post({"messages": []})  # Groq is skipped while its daily cap lasts
+        assert [u for u, _ in calls].count(gc.GROQ_URL) == 2, calls
+    finally:
+        gc._session.post, gc.OPENROUTER_API_KEY, gc._groq_blocked_until = saved
+        gc.last_provider = "groq"
+
+
 # ------------------------------------------------------------------ benchmark scorer
 def test_benchmark_retest_selects_fixed_and_new_questions():
     import benchmark

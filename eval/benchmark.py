@@ -258,6 +258,7 @@ def run(name: str, only: str | None = None):
     import analyst
     import ask
     from atlas import Atlas
+    import groq_client
     from groq_client import GROQ_MODEL, GroqUnavailable
 
     analyst.MAX_RATE_LIMIT_WAIT = 300  # unattended: wait out longer limits too
@@ -302,7 +303,7 @@ def run(name: str, only: str | None = None):
                "tools": [l.strip() for l in log.splitlines() if l.strip().startswith("→")],
                "unverified": next((l.split(":", 1)[1].strip() for l in log.splitlines()
                                    if "Not verified" in l), None),
-               "revised": "fact-check" in log, "model": GROQ_MODEL, "tokens": bot.last_tokens,
+               "revised": "fact-check" in log, "model": GROQ_MODEL, "provider": groq_client.last_provider, "tokens": bot.last_tokens,
                "at": datetime.now().isoformat(timespec="seconds")}
         with path.open("a") as f:
             f.write(json.dumps(row, ensure_ascii=False) + "\n")

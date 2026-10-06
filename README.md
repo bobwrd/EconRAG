@@ -57,6 +57,8 @@ Create `.env` with your keys (free):
 ```
 FRED_API_KEY=...      # https://fred.stlouisfed.org/docs/api/api_key.html
 GROQ_API_KEY=...      # https://console.groq.com — optional; without it, local-only
+OPENROUTER_API_KEY=...  # optional backup when Groq's daily limit runs out (https://openrouter.ai)
+OPENROUTER_MODEL=...    # optional; default openai/gpt-oss-120b (paid, ~1,600 questions per $1)
 ```
 
 **Data** (not in the repository):

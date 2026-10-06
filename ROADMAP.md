@@ -130,6 +130,11 @@ retrieval code), `get_data(source, series, countries, years)` → computed stats
       chart** (GIF, Gapminder-style, sized by population) when an answer used two World Bank
       indicators for the same countries. All of an answer's charts are drawn in one Ask process
       (~4.5 s for 7 charts). Without Ask, line and bar charts fall back to plain SVG.
+      Also charted: county rankings, county profiles (mobility by group: county vs state vs
+      US), county correlations (average y by fifth of x, the Opportunity Insights binned
+      scatter), growth accounting, peer comparisons, and small tables printed by run_python
+      ("label: value" lines). Axes use readable names (backticked columns in Ask). Still not
+      possible: asking for a specific chart (the model doesn't control charts, by design).
 
 ## Phase 3: Literature and evidence
 

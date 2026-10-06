@@ -137,12 +137,82 @@ def _points(entry: dict, sample_key_prefix: str, extremes: tuple[str, ...], xkey
     return pts
 
 
+ATLAS_SOURCE = "Opportunity Atlas (Opportunity Insights)"
+
+
+def _atlas_specs(name: str, result: dict) -> list[dict]:
+    if name == "rank_counties" and result.get("counties"):
+        return [{"kind": "bar", "slug": f"{result['metric']}_counties", "category": "County",
+                 "title": f"{result['metric'].replace('_', ' ').capitalize()}: {result['order']} counties, "
+                          f"{result['scope']}", "units": result.get("unit", ""), "source": ATLAS_SOURCE,
+                 "bars": [(c["county"], c["value"]) for c in result["counties"]],
+                 "keep_order": True}]  # already ranked (highest or lowest first)
+    if name == "county_profile":
+        key = next((k for k in result if k.startswith("outcomes")), None)
+        if not key:
+            return []
+        rows = [(m.removeprefix("upward_mobility").strip("_").replace("_", " ").capitalize() or "All", where, v[i])
+                for m, v in result[key].items() if m.startswith("upward_mobility")
+                for i, where in enumerate([result["county"].split(",")[0], "State average", "US average"])
+                if v[i] is not None]
+        return [{"kind": "grouped_bar", "slug": "mobility_" + result["county"], "rows": rows, "category": "Children",
+                 "group": "Place", "title": f"Upward mobility, {result['county']}",
+                 "units": "Income percentile (kids of 25th-pct parents)", "source": ATLAS_SOURCE}]
+    if name == "correlate_counties":
+        key = next((k for k in result if k.startswith("y_by_x_quintile")), None)
+        bins = result.get(key) if key else None
+        if isinstance(bins, list) and bins:
+            x, y = result["x"], result["y"]
+            return [{"kind": "bar", "slug": f"{x['metric']}_vs_{y['metric']}", "category": x["metric"].replace("_", " "),
+                     "bars": [(f"{b['x_range'][0]:g}-{b['x_range'][1]:g}", b["avg_y"]) for b in bins], "keep_order": True,
+                     "title": f"Average {y['metric'].replace('_', ' ')} by fifth of counties on "
+                              f"{x['metric'].replace('_', ' ')} (r = {result['weighted_correlation']})",
+                     "units": y.get("unit", ""), "source": ATLAS_SOURCE}]
+    return []
+
+
+_TABLE_ROW = re.compile(r"^\s*(.+?)\s*(?:,|\t|\||:)\s*(-?\d[\d,]*\.?\d*)\s*%?\s*$")
+
+
+def _table_spec(result: dict) -> list[dict]:
+    """A run_python script that printed a small table ("label: value" / "label, value"
+    lines, 3+ of them) gets a chart: a line if the labels are years, else bars."""
+    rows = []
+    for line in (result.get("output") or "").splitlines():
+        m = _TABLE_ROW.match(line)
+        if m:
+            rows.append((m.group(1).strip(), float(m.group(2).replace(",", ""))))
+        elif rows:
+            break  # only the first contiguous table
+    if not 3 <= len(rows) <= MAX_BARS:
+        return []
+    source = "Computed with run_python from the data listed in the answer"
+    if all(re.fullmatch(r"(19|20)\d\d", label) for label, _ in rows):
+        return [{"kind": "line", "slug": "computed_series", "lines": {"computed": [(float(l), v) for l, v in rows]},
+                 "title": "Computed series", "units": "", "source": source}]
+    return [{"kind": "bar", "slug": "computed_table", "bars": rows, "keep_order": True, "title": "Computed values",
+             "units": "", "source": source}]
+
+
 def specs_for(name: str, args: dict, result: dict) -> list[dict]:
     """Chart specs (what to draw, not how) for one tool result worth drawing."""
-    if name != "get_data" or not isinstance(result, dict) or "error" in result:
+    if not isinstance(result, dict) or "error" in result:
+        return []
+    if name in ("rank_counties", "county_profile", "correlate_counties"):
+        return _atlas_specs(name, result)
+    if name == "run_python":
+        return _table_spec(result)
+    if name != "get_data":
         return []
     source = str(result.get("source", ""))
     out = []
+    if "capital_share_alpha" in result:  # long-run growth accounting
+        g = result["growth_pct_per_year"]
+        bars = [("Output per worker", g["output_per_worker"]), ("Capital deepening", g["capital_deepening_contribution"]),
+                ("Human capital", g["human_capital_contribution"]), ("TFP", g["tfp_contribution"])]
+        return [{"kind": "bar", "slug": "growth_accounting_" + result["country"], "bars": bars, "keep_order": True,
+                 "category": "Component", "title": f"Sources of growth, {result['country']} {result['period']}",
+                 "units": "% per year", "source": source}]
     if "series_id" in result:  # FRED
         pts = _points(result, "sampled_points", ("first", "latest", "max", "min"), "date")
         out.append({"kind": "line", "slug": result["series_id"], "lines": {result["series_id"]: pts},
@@ -156,6 +226,19 @@ def specs_for(name: str, args: dict, result: dict) -> list[dict]:
                     "units": "", "source": wb_source})
         latest = {e["code"]: (e["economy"], e["latest"]["value"], e["latest"]["year"])
                   for e in result["economies"] if "latest" in e and e.get("code")}
+        for e in result["economies"]:  # peers=true: the country against its groups
+            peers = e.get("peers")
+            if isinstance(peers, dict) and "latest" in e:
+                bars = [(e["economy"], e["latest"]["value"])]
+                for key in ("income_group", "region"):
+                    p = peers.get(key) or {}
+                    if p.get("aggregate"):
+                        bars.append((f"{p['group']} (aggregate)", p["aggregate"]["value"]))
+                    if p.get("median") is not None:
+                        bars.append((f"{p['group']} (median country)", p["median"]))
+                out.append({"kind": "bar", "slug": f"{result['indicator']}_{e['economy']}_peers", "bars": bars,
+                            "keep_order": True, "category": "Compared with", "units": "",
+                            "title": f"{result['name']}: {e['economy']} vs peers", "source": wb_source})
         if len(latest) >= MAP_MIN_COUNTRIES:
             out.append({"kind": "map", "slug": result["indicator"] + "_map", "values": latest,
                         "title": result["name"] + " (latest year)", "units": "", "source": wb_source})
@@ -276,9 +359,10 @@ def _map_names() -> dict[str, str]:
     return _MAP_NAMES
 
 
-def _ident(text: str, default: str = "value") -> str:
-    words = re.findall(r"[a-z0-9]+", text.lower())
-    return "_".join(words)[:32].strip("_") or default
+def _axis(text: str, default: str = "Value") -> str:
+    """A readable axis name, usable as an Ask column in backticks."""
+    text = re.sub(r"\s+", " ", text.replace("`", "'").replace('"', "'")).strip(" ,")
+    return (text[:48].rstrip() + "...") if len(text) > 50 else (text or default)
 
 
 def _label(spec: dict) -> str:
@@ -292,34 +376,40 @@ def _label(spec: dict) -> str:
 
 
 def ask_program(spec: dict, csv_path: Path) -> tuple[list[list], str] | None:
-    """(CSV rows, Ask program) for a spec, or None if it has nothing to draw."""
+    """(CSV rows, Ask program) for a spec, or None if it has nothing to draw.
+    Columns are named for their axis labels and quoted with backticks."""
     kind, label = spec["kind"], _label(spec)
+    value = _axis(spec.get("units") or spec["title"])
     if kind == "line":
-        col = _ident(spec.get("units") or spec["title"])
-        rows = [["series", "year", col]] + [[name, round(x, 3), y] for name, pts in spec["lines"].items()
-                                           for x, y in sorted(set(pts))]
+        rows = [["Series", "Year", value]] + [[name, round(x, 3), y] for name, pts in spec["lines"].items()
+                                             for x, y in sorted(set(pts))]
         if len(rows) < 3:
             return None
-        return rows, (f'load "{csv_path}"\nchart {col} by year as line\n'
-                      f'  color by series\n  label "{label}"\n')
+        return rows, (f'load "{csv_path}"\nchart `{value}` by Year as line\n'
+                      f'  color by Series\n  label "{label}"\n')
     if kind == "bar":
-        col = _ident(spec.get("units") or spec["title"])
-        rows = [["name", col]] + [[n, v] for n, v in spec["bars"]]
-        return rows, (f'load "{csv_path}"\nsort by {col} descending\nchart {col} by name as bar\n'
-                      f'  label "{label}"\n')
+        cat = spec.get("category", "Name")
+        rows = [[cat, value]] + [[n, v] for n, v in spec["bars"]]
+        sort = "" if spec.get("keep_order") else f"sort by `{value}` descending\n"
+        return rows, f'load "{csv_path}"\n{sort}chart `{value}` by `{cat}` as bar\n  label "{label}"\n'
+    if kind == "grouped_bar":  # rows: (category, group, value)
+        cat, group = spec.get("category", "Category"), spec.get("group", "Group")
+        rows = [[cat, group, value]] + [list(r) for r in spec["rows"]]
+        return rows, (f'load "{csv_path}"\nchart `{value}` by `{cat}` as bar\n'
+                      f'  color by `{group}`\n  label "{label}"\n')
     if kind == "map":
         names = _map_names()
-        rows = [["country", "value"]] + [[names[c], v] for c, (_, v, _) in spec["values"].items() if c in names]
+        rows = [["Country", value]] + [[names[c], v] for c, (_, v, _) in spec["values"].items() if c in names]
         if len(rows) < MAP_MIN_COUNTRIES + 1:
             return None
-        return rows, f'load "{csv_path}"\nchart value by country as map\n  label "{label}"\n'
+        return rows, f'load "{csv_path}"\nchart `{value}` by Country as map\n  label "{label}"\n'
     if kind == "bubble":
-        xcol, ycol = _ident(spec["xlabel"], "x"), _ident(spec["ylabel"], "y")
+        xcol, ycol = _axis(spec["xlabel"], "x"), _axis(spec["ylabel"], "y")
         if xcol == ycol:
-            ycol += "_y"
-        rows = [["country", "year", xcol, ycol, "population_millions"]] + [list(r) for r in spec["rows"]]
-        return rows, (f'load "{csv_path}"\nchart {ycol} by {xcol} as bubble\n  size by population_millions\n'
-                      f'  color by country\n  animate by year\n  label "{label}"\n')
+            ycol += " (y)"
+        rows = [["Country", "Year", xcol, ycol, "Population (millions)"]] + [list(r) for r in spec["rows"]]
+        return rows, (f'load "{csv_path}"\nchart `{ycol}` by `{xcol}` as bubble\n  size by `Population (millions)`\n'
+                      f'  color by Country\n  animate by Year\n  label "{label}"\n')
     return None
 
 

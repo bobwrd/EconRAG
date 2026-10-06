@@ -78,6 +78,17 @@ def test_charts_drawn_from_tool_results_without_a_model():
     assert "Nairobi" in bars and "North Eastern" in bars and "national 0.628" in bars and "..." not in bars
 
 
+def test_chart_specs_for_counties_peers_and_computed_tables():
+    import charts
+    profile = {"county": "Cook County, IL", "outcomes [county, state_avg, national_avg, national_percentile_of_counties]":
+               {"upward_mobility": [38.5, 40.0, 40.8, 28], "upward_mobility_black": [30.9, 31.0, 32.5, 26]}}
+    rows = charts.specs_for("county_profile", {}, profile)[0]["rows"]
+    assert rows[0] == ("All", "Cook County", 38.5) and rows[3] == ("Black", "Cook County", 30.9), rows
+    table = charts.specs_for("run_python", {}, {"output": "Kenya: 41\nGhana: 48\nIndia, 32\nnote 7\nX: 1"})[0]
+    assert table["bars"] == [("Kenya", 41.0), ("Ghana", 48.0), ("India", 32.0)], table
+    assert charts.specs_for("run_python", {}, {"output": "India needs 6.29% a year"}) == []
+
+
 def test_ask_draws_png_line_and_map():
     import tempfile
     import charts

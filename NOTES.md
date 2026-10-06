@@ -174,8 +174,9 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
   ~/Desktop/Projects/Portfolio/Ask and is never touched): all jobs go to one Ask process, since
   starting one per chart reloads pandas/matplotlib each time (42 s vs 4.5 s for 7 charts).
   Maps match by name, so codes are translated to the map file's names via its iso_a3 field.
-  Falls back to plain SVG (line/bar only) when Ask isn't set up. Known cosmetic issue: Ask's
-  bubble legend uses full-size bubbles.
+  Falls back to plain SVG (line/bar only) when Ask isn't set up. Also charts county results,
+  growth accounting, peer comparisons, and run_python output that looks like a small table.
+  Known cosmetic issue: Ask's bubble legend uses full-size bubbles.
 - `compute.py` — the `run_python` tool: fetches the requested series with the existing
   modules, then runs the model's script under `sandbox-exec` (no network, no writes outside its
   temp folder, CPU/time/output limits). Personal use only — not safe for other users as-is.

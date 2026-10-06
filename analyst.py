@@ -23,6 +23,7 @@ fall back to the local pipeline.
 
 import datetime
 import json
+import re
 from pathlib import Path
 import time
 
@@ -81,7 +82,7 @@ Rules:
 6. Call independent tools together in the same turn rather than one per turn. Don't repeat a search with near-identical wording.
 7. To compare episodes (e.g. two recessions), call get_data once per episode's date range: max and min are exact only for the range requested; sampled points can miss peaks.
 8. The first time you use the Opportunity Atlas mobility measure, explain it plainly, e.g. "children from low-income families (parents at the 25th income percentile) who grew up in Cook County reached, on average, the 38.5th percentile of household income as adults" — these are children born 1978-83, with incomes measured in 2014-15.
-9. A yes/no, above/below, or more/less question gets an explicit answer in the first sentence ("Below: ..."; if it differs by measure, e.g. market rates vs PPP, give the answer for each).
+9. Only when the question is yes/no, above/below, or more/less: answer it explicitly in the first sentence (e.g. "No: India is below $3,000 at market rates, but well above it in PPP terms"); if it differs by measure, give the answer for each.
 10. Answer first, in plain prose: the explanation, the mechanisms, what research finds. Data supports the answer: cite the 2-4 figures that matter, inline. Use a table only when the user asks for a list or ranking, or many numbers are the point. Be concise — under 250 words. Output is shown in a terminal: plain text and simple markdown only."""
 
 # Kept terse: the schemas are re-sent with every request (see MAX_RATE_LIMIT_WAIT).
@@ -242,6 +243,14 @@ def _trim_regions(result: dict) -> dict:
             regions[key] = rows[:DHS_REGIONS_SHOWN] + [["...", f"{len(rows) - 2 * DHS_REGIONS_SHOWN} more"]] \
                 + rows[-DHS_REGIONS_SHOWN:]
     return result
+
+
+def clean_markers(answer: str) -> str:
+    """Removes the 【...】 source markers gpt-oss and Nemotron add: a marker naming a
+    citation becomes a normal "(Author (Year))"; bare tool names are dropped."""
+    answer = re.sub(r"【\s*[a-z_]+\s*:\s*([^】]+?)\s*】", r" (\1)", answer)
+    answer = re.sub(r"\s*【[^】]*】", "", answer)
+    return re.sub(r" \((\([^()]*\([^()]*\)\))\)", r" \1", answer)  # " ((X (2016)))" -> " (X (2016))"
 
 
 FRED_NEWER_WINDOW = datetime.timedelta(days=3 * 365)
@@ -456,7 +465,7 @@ class Analyst:
             msg = response["choices"][0]["message"]
             calls = msg.get("tool_calls") or []
             if not calls:
-                answer = (msg.get("content") or "").strip()
+                answer = clean_markers((msg.get("content") or "").strip())
                 if not answer:
                     answer = "(The model returned no answer — try rephrasing.)"
                 numbers, citations = self._check(answer)
@@ -472,7 +481,8 @@ class Analyst:
                         + (f"These citations appear in no search_papers/search_literature result: {citations}. "
                            if citations else "")
                         + "Rewrite the full answer for the user: remove or correct each of these, calling "
-                          "tools if you need the real figure. Don't mention this check.")}]
+                          "tools if you need the real figure. If you drop a citation, drop the claim it "
+                          "supported too, unless a retrieved source supports it. Don't mention this check.")}]
                     continue
                 print(f"\nAnswer:\n{answer}")
                 if numbers or citations:

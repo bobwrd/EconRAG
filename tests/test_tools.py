@@ -524,6 +524,8 @@ def test_followups_may_reuse_numbers_from_previous_answers():
     assert numbers == [] and citations == [], (numbers, citations)
     assert bot._check("The DRC's rate is 91.2%.")[0] == ["91.2"]  # new numbers are still checked
     assert "these results" in analyst.SYSTEM_PROMPT and "Answer first, in plain prose" in analyst.SYSTEM_PROMPT
+    assert analyst.clean_markers("Conflict matters【search_literature: Arndt et al. (2016)】; 10.4%【get_data】.") == \
+        "Conflict matters (Arndt et al. (2016)); 10.4%."
 
 
 # ------------------------------------------------------------------ benchmark scorer

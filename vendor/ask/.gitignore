@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+
+
+# Scratch output written by `save as` (keep the bundled sample data)
+out.csv
+output.csv
+
+# Local test datasets (not part of the repo)
+EAP_DWAP_*.csv
+
+# Packaging
+*.egg-info/
+Ask.spec
+packaging/*.app
+
+# Generated Ask reports
+*_report.html
+__preview_probe__.html

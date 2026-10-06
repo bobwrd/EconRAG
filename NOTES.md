@@ -167,8 +167,15 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
   measures, Gini/Lorenz/Palma, population-weighted group means with coverage, growth
   decomposition, beta/sigma convergence). Not yet a tool; meant for the Phase 2 sandbox.
 - `PAPER_PROPOSAL.md` — 15 open-access development papers proposed for `docs/`, awaiting approval.
-- `charts.py` — SVG charts drawn after each answer from the tool results (no model, no
-  tokens): lines for time series, bars for regions/rankings; saved in `charts/` (gitignored).
+- `charts.py` — charts drawn after each answer from the tool results (no model, no tokens):
+  lines for time series, bars for regions/rankings, maps for 5+ countries, and an animated
+  bubble chart for two World Bank indicators over time; saved in `charts/` (gitignored).
+  Drawn by the copy of Ask in `vendor/ask` (its own `.venv`, gitignored; the original lives in
+  ~/Desktop/Projects/Portfolio/Ask and is never touched): all jobs go to one Ask process, since
+  starting one per chart reloads pandas/matplotlib each time (42 s vs 4.5 s for 7 charts).
+  Maps match by name, so codes are translated to the map file's names via its iso_a3 field.
+  Falls back to plain SVG (line/bar only) when Ask isn't set up. Known cosmetic issue: Ask's
+  bubble legend uses full-size bubbles.
 - `compute.py` — the `run_python` tool: fetches the requested series with the existing
   modules, then runs the model's script under `sandbox-exec` (no network, no writes outside its
   temp folder, CPU/time/output limits). Personal use only — not safe for other users as-is.

@@ -137,34 +137,51 @@ def _points(entry: dict, sample_key_prefix: str, extremes: tuple[str, ...], xkey
     return pts
 
 
-def charts_for(name: str, args: dict, result: dict) -> list[tuple[str, str]]:
-    """(slug, svg) for one tool result that has something worth drawing."""
+def specs_for(name: str, args: dict, result: dict) -> list[dict]:
+    """Chart specs (what to draw, not how) for one tool result worth drawing."""
     if name != "get_data" or not isinstance(result, dict) or "error" in result:
         return []
     source = str(result.get("source", ""))
     out = []
     if "series_id" in result:  # FRED
         pts = _points(result, "sampled_points", ("first", "latest", "max", "min"), "date")
-        svg = line_chart({result["series_id"]: pts}, result.get("title", result["series_id"]),
-                         result.get("units", ""), f"FRED, {result['series_id']} (St. Louis Fed)")
-        out.append((result["series_id"], svg))
-    elif "economies" in result:  # World Bank
+        out.append({"kind": "line", "slug": result["series_id"], "lines": {result["series_id"]: pts},
+                    "title": result.get("title", result["series_id"]), "units": result.get("units", ""),
+                    "source": f"FRED, {result['series_id']} (St. Louis Fed)"})
+    elif "economies" in result:  # World Bank: one line per economy, a map when there are many
+        wb_source = f"World Bank, World Development Indicators ({result['indicator']})"
         lines = {e["economy"]: _points(e, "sampled", ("first", "latest", "max", "min"), "year")
                  for e in result["economies"] if "latest" in e}
-        out.append((result["indicator"], line_chart(lines, result["name"], "",
-                                                    f"World Bank, World Development Indicators ({result['indicator']})")))
+        out.append({"kind": "line", "slug": result["indicator"], "lines": lines, "title": result["name"],
+                    "units": "", "source": wb_source})
+        latest = {e["code"]: (e["economy"], e["latest"]["value"], e["latest"]["year"])
+                  for e in result["economies"] if "latest" in e and e.get("code")}
+        if len(latest) >= MAP_MIN_COUNTRIES:
+            out.append({"kind": "map", "slug": result["indicator"] + "_map", "values": latest,
+                        "title": result["name"] + " (latest year)", "units": "", "source": wb_source})
+    elif "ranked" in result and "indicator" in result:  # World Bank ranking of every economy (names only)
+        codes = _wb_codes()
+        latest = {codes.get(r["economy"], r["economy"]): (r["economy"], r["value"], r["year"])
+                  for r in result["ranked"]}
+        title = f"{result['name']}, {result.get('order', 'highest')} {len(latest)}"
+        out.append({"kind": "bar", "slug": result["indicator"] + "_ranking", "title": title, "units": "",
+                    "bars": [(n, v) for n, v, _ in latest.values()],
+                    "source": f"World Bank, World Development Indicators ({result['indicator']})"})
+        if len(latest) >= MAP_MIN_COUNTRIES:
+            out.append({"kind": "map", "slug": result["indicator"] + "_map", "values": latest, "title": title,
+                        "units": "", "source": f"World Bank, World Development Indicators ({result['indicator']})"})
     elif "ranked" in result and source.startswith("Global Data Lab"):
-        bars = [(f"{r['region']} ({r['country']})", r["value"]) for r in result["ranked"]]
-        out.append((result["metric"] + "_ranking", bar_chart(bars, f"{result['name']}, regions ({result['order']})",
-                                                             result["units"], source)))
+        out.append({"kind": "bar", "slug": result["metric"] + "_ranking", "units": result["units"], "source": source,
+                    "title": f"{result['name']}, regions ({result['order']})",
+                    "bars": [(f"{r['region']} ({r['country']})", r["value"]) for r in result["ranked"]]})
     elif "countries" in result and source.startswith("Global Data Lab"):
         for c in result["countries"]:
             rows = next((v for k, v in c.items() if k.startswith("regions [")), None)
             if rows:
-                bars = [(r, v) for r, v in rows if r != "..."]
-                out.append((f"{result['metric']}_{c['country']}", bar_chart(
-                    bars, f"{result['name']} by region, {c['country']} {c['year']}", result["units"], source,
-                    ("national", c["national"]) if c.get("national") is not None else None)))
+                out.append({"kind": "bar", "slug": f"{result['metric']}_{c['country']}", "units": result["units"],
+                            "title": f"{result['name']} by region, {c['country']} {c['year']}", "source": source,
+                            "bars": [(r, v) for r, v in rows if r != "..."],
+                            "reference": ("national", c["national"]) if c.get("national") is not None else None})
     elif "countries" in result and source.startswith("DHS"):
         lines = {}
         for c in result["countries"]:
@@ -174,25 +191,226 @@ def charts_for(name: str, args: dict, result: dict) -> list[tuple[str, str]]:
             reg = c.get("regions")
             rows = next((v for k, v in reg.items() if k.startswith("regions [")), None) if isinstance(reg, dict) else None
             if rows:
-                bars = [(r[0], r[1]) for r in rows if r[0] != "..."]
-                out.append((f"{result['indicator']}_{c['country']}_regions", bar_chart(
-                    bars, f"{result['name']} by region, {c['country']} {reg.get('year', '')}", result.get("unit", ""),
-                    source, ("national", reg["national"]) if isinstance(reg.get("national"), (int, float)) else None)))
-        out.append((result["indicator"], line_chart(lines, result["name"], result.get("unit", ""), source)))
+                out.append({"kind": "bar", "slug": f"{result['indicator']}_{c['country']}_regions", "source": source,
+                            "title": f"{result['name']} by region, {c['country']} {reg.get('year', '')}",
+                            "units": result.get("unit", ""), "bars": [(r[0], r[1]) for r in rows if r[0] != "..."],
+                            "reference": ("national", reg["national"])
+                            if isinstance(reg.get("national"), (int, float)) else None})
+        out.append({"kind": "line", "slug": result["indicator"], "lines": lines, "title": result["name"],
+                    "units": result.get("unit", ""), "source": source})
     elif "countries" in result and "variable" in result:  # long-run
         lines = {c["country"]: _points(c, "sampled", ("first", "last", "peak", "trough"), "year")
                  for c in result["countries"] if "last" in c}
-        out.append((result["variable"], line_chart(lines, result["name"], result.get("units", ""), source)))
-    return [(slug, svg) for slug, svg in out if svg]
+        out.append({"kind": "line", "slug": result["variable"], "lines": lines, "title": result["name"],
+                    "units": result.get("units", ""), "source": source})
+    return out
 
 
-def auto(results: list[tuple[str, dict, dict]], out_dir: Path = OUT_DIR) -> list[Path]:
-    """Saves a chart for every tool result worth drawing; returns the file paths."""
-    paths, stamp = [], datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
-    for name, args, result in results:
-        for slug, svg in charts_for(name, args, result):
-            out_dir.mkdir(exist_ok=True)
-            path = out_dir / f"{stamp}_{re.sub(r'[^A-Za-z0-9._-]+', '_', slug)[:60]}.svg"
-            path.write_text(svg)
+def _wb_codes() -> dict[str, str]:
+    """World Bank economy name -> ISO3, from the cached catalog (rankings carry names only)."""
+    import json
+    path = Path("data/worldbank/countries.json")
+    return {c["name"]: c["id"] for c in json.loads(path.read_text())} if path.exists() else {}
+
+
+def bubble_spec(results: list[tuple[str, dict, dict]], wb) -> dict | None:
+    """Gapminder-style animation when an answer used two World Bank indicators for
+    the same 2+ countries: x = the income-like one, y = the other, bubbles sized by
+    population, one frame per year. Full yearly series come from wb (plain data
+    requests, no model)."""
+    by_indicator: dict[str, set[str]] = {}
+    names: dict[str, str] = {}
+    for name, _, r in results:
+        if name == "get_data" and isinstance(r, dict) and "economies" in r and "error" not in r:
+            codes = {e["code"] for e in r["economies"] if "latest" in e and e.get("code")}
+            by_indicator.setdefault(r["indicator"], set()).update(codes)
+            names[r["indicator"]] = r["name"]
+    pairs = [(a, b) for a in by_indicator for b in by_indicator if a < b and len(by_indicator[a] & by_indicator[b]) >= 2]
+    if not pairs or wb is None:
+        return None
+    a, b = pairs[0]
+    x, y = (a, b) if re.search(r"PCAP|GNI|GDP", a) or not re.search(r"PCAP|GNI|GDP", b) else (b, a)
+    codes = sorted(by_indicator[a] & by_indicator[b])[:12]
+    series = {}
+    for ind in (x, y, "SP.POP.TOTL"):
+        series[ind] = {}
+        for row in wb._observations(ind, codes, 1960, 2100):
+            if row["value"] is not None:
+                series[ind][(wb._code(row), int(row["date"]))] = (row["country"]["value"], float(row["value"]))
+    rows = [(series[x][k][0], k[1], series[x][k][1], series[y][k][1], series["SP.POP.TOTL"][k][1] / 1e6)
+            for k in series[x] if k in series[y] and k in series["SP.POP.TOTL"]]
+    years = sorted({r[1] for r in rows})
+    if len(years) < 3:
+        return None
+    step = max(1, len(years) // 40)  # keep the GIF to ~40 frames
+    keep = set(years[::step]) | {years[-1]}
+    return {"kind": "bubble", "slug": f"{x}_vs_{y}", "rows": [r for r in sorted(rows, key=lambda r: r[1]) if r[1] in keep],
+            "xlabel": names.get(x, x), "ylabel": names.get(y, y),
+            "title": f"{re.sub(r' [(].*', '', names.get(y, y))} vs {re.sub(r' [(].*', '', names.get(x, x))}",
+            "source": f"World Bank, World Development Indicators ({x}, {y}, SP.POP.TOTL)"}
+
+
+# ---------------------------------------------------------------- drawing with Ask
+# A copy of Ask (the user's charting language) lives in vendor/ask with its own
+# environment (pandas, matplotlib, geopandas). It draws PNG charts, maps, and
+# animated GIFs; without it, line and bar charts fall back to the SVG code above.
+ASK_DIR = Path(__file__).resolve().parent / "vendor" / "ask"
+ASK_PYTHON = ASK_DIR / ".venv" / "bin" / "python"
+ASK_TIMEOUT = 60
+MAP_MIN_COUNTRIES = 5
+_MAP_NAMES: dict[str, str] | None = None
+
+
+def ask_available() -> bool:
+    return ASK_PYTHON.exists()
+
+
+def _map_names() -> dict[str, str]:
+    """ISO3 -> the country name Ask's world map uses (it matches by name)."""
+    global _MAP_NAMES
+    if _MAP_NAMES is None:
+        import json
+        geo = json.loads((ASK_DIR / "sample_data" / "world_countries.geojson").read_text())
+        _MAP_NAMES = {f["properties"]["iso_a3"]: f["properties"]["name"] for f in geo["features"]
+                      if f["properties"].get("iso_a3") not in (None, "-99")}
+    return _MAP_NAMES
+
+
+def _ident(text: str, default: str = "value") -> str:
+    words = re.findall(r"[a-z0-9]+", text.lower())
+    return "_".join(words)[:32].strip("_") or default
+
+
+def _label(spec: dict) -> str:
+    """Short enough to fit above the chart: the title without long parentheticals,
+    plus the source's first part ("World Bank", "Global Data Lab", ...)."""
+    title = re.sub(r"\s*\([^)]{15,}\)", "", spec["title"]).strip()
+    if len(title) > 70:
+        title = title[:67].rstrip() + "..."
+    source = spec["source"].split(",")[0].split(" (")[0]
+    return f"{title} ({source})".replace('"', "'")
+
+
+def ask_program(spec: dict, csv_path: Path) -> tuple[list[list], str] | None:
+    """(CSV rows, Ask program) for a spec, or None if it has nothing to draw."""
+    kind, label = spec["kind"], _label(spec)
+    if kind == "line":
+        col = _ident(spec.get("units") or spec["title"])
+        rows = [["series", "year", col]] + [[name, round(x, 3), y] for name, pts in spec["lines"].items()
+                                           for x, y in sorted(set(pts))]
+        if len(rows) < 3:
+            return None
+        return rows, (f'load "{csv_path}"\nchart {col} by year as line\n'
+                      f'  color by series\n  label "{label}"\n')
+    if kind == "bar":
+        col = _ident(spec.get("units") or spec["title"])
+        rows = [["name", col]] + [[n, v] for n, v in spec["bars"]]
+        return rows, (f'load "{csv_path}"\nsort by {col} descending\nchart {col} by name as bar\n'
+                      f'  label "{label}"\n')
+    if kind == "map":
+        names = _map_names()
+        rows = [["country", "value"]] + [[names[c], v] for c, (_, v, _) in spec["values"].items() if c in names]
+        if len(rows) < MAP_MIN_COUNTRIES + 1:
+            return None
+        return rows, f'load "{csv_path}"\nchart value by country as map\n  label "{label}"\n'
+    if kind == "bubble":
+        xcol, ycol = _ident(spec["xlabel"], "x"), _ident(spec["ylabel"], "y")
+        if xcol == ycol:
+            ycol += "_y"
+        rows = [["country", "year", xcol, ycol, "population_millions"]] + [list(r) for r in spec["rows"]]
+        return rows, (f'load "{csv_path}"\nchart {ycol} by {xcol} as bubble\n  size by population_millions\n'
+                      f'  color by country\n  animate by year\n  label "{label}"\n')
+    return None
+
+
+# Runs inside Ask's own environment: draws every job in one process, so pandas
+# and matplotlib load once per answer, not once per chart.
+_DRIVER = """
+import json, sys
+import matplotlib
+matplotlib.use("Agg")
+from asklang.interpreter import Env, run_program
+from asklang.charts import save_chart_image, save_chart_animation
+done = []
+for job in json.load(sys.stdin):
+    try:
+        _, chart, _, _ = run_program(job["program"], Env())
+        if chart is None:
+            continue
+        if job["out"].endswith(".gif"):
+            save_chart_animation(chart, job["out"])
+        else:
+            save_chart_image(chart, job["out"])
+        done.append(job["out"])
+    except Exception as e:
+        print(f"chart failed: {type(e).__name__}: {e}", file=sys.stderr)
+print(json.dumps(done))
+"""
+
+
+def draw_with_ask(jobs: list[tuple[dict, Path]]) -> set[Path]:
+    """Draws (spec, path) jobs with Ask in one process; returns the paths written."""
+    import csv
+    import json
+    import subprocess
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix="ask_chart_") as tmp:
+        payload = []
+        for i, (spec, path) in enumerate(jobs):
+            csv_path = Path(tmp) / f"data{i}.csv"
+            made = ask_program(spec, csv_path)
+            if made is None:
+                continue
+            rows, program = made
+            with open(csv_path, "w", newline="") as f:
+                csv.writer(f).writerows(rows)
+            payload.append({"program": program, "out": str(path.resolve())})
+        if not payload:
+            return set()
+        try:
+            proc = subprocess.run([str(ASK_PYTHON), "-c", _DRIVER], cwd=ASK_DIR, input=json.dumps(payload),
+                                  capture_output=True, text=True, timeout=ASK_TIMEOUT)
+            done = json.loads(proc.stdout.strip().splitlines()[-1]) if proc.stdout.strip() else []
+        except (subprocess.TimeoutExpired, ValueError):
+            return set()
+    return {Path(p) for p in done if Path(p).exists()}
+
+
+def draw_svg(spec: dict) -> str:
+    if spec["kind"] == "line":
+        return line_chart(spec["lines"], spec["title"], spec.get("units", ""), spec["source"])
+    if spec["kind"] == "bar":
+        return bar_chart(spec["bars"], spec["title"], spec.get("units", ""), spec["source"], spec.get("reference"))
+    return ""  # maps and animations need Ask
+
+
+def auto(results: list[tuple[str, dict, dict]], out_dir: Path = OUT_DIR, wb=None, use_ask: bool | None = None) -> list[Path]:
+    """Draws a chart for every tool result worth drawing; returns the file paths.
+    Ask (vendor/ask) draws PNGs, maps, and the bubble animation; otherwise SVG."""
+    use_ask = ask_available() if use_ask is None else use_ask
+    specs = [s for name, args, result in results for s in specs_for(name, args, result)]
+    if use_ask:
+        try:
+            bubble = bubble_spec(results, wb)
+        except Exception:  # a failed data request shouldn't cost the other charts
+            bubble = None
+        if bubble:
+            specs.append(bubble)
+    if not specs:
+        return []
+    out_dir.mkdir(exist_ok=True)
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    # string concatenation, not with_suffix: ids like NY.GDP.PCAP.KD contain dots
+    bases = [str(out_dir / f"{stamp}_{i}_{re.sub(r'[^A-Za-z0-9._-]+', '_', s['slug'])[:60]}") for i, s in enumerate(specs)]
+    jobs = [(s, Path(b + (".gif" if s["kind"] == "bubble" else ".png"))) for s, b in zip(specs, bases)]
+    drawn = draw_with_ask(jobs) if use_ask else set()
+    paths = []
+    for (spec, path), base in zip(jobs, bases):
+        if path.resolve() in drawn:
             paths.append(path)
+            continue
+        svg = draw_svg(spec)  # fallback: line and bar charts only
+        if svg:
+            Path(base + ".svg").write_text(svg)
+            paths.append(Path(base + ".svg"))
     return paths

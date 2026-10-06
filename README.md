@@ -36,8 +36,9 @@ runs on the fetched data in a sandbox with no network access; its printed number
 fact-checked like any other.
 
 Each answer also comes with charts of the data it used — time series as line charts, regions
-and rankings as bar charts — drawn by plain Python (no model) and saved in `charts/` as SVG
-files that open in any browser.
+and rankings as bar charts, world maps when many countries are involved, and an animated
+Gapminder-style bubble chart when two indicators are compared over time. They're drawn by
+[Ask](vendor/ask) (a small charting language, no AI model involved) and saved in `charts/`.
 
 Economics conventions are enforced in code, not left to the model: poverty figures carry
 their survey year and the current $3.00/day (2021 PPP) line, GDP per capita comes with both
@@ -89,6 +90,9 @@ OPENROUTER_MODEL=...    # optional; default openai/gpt-oss-120b (paid, ~1,600 qu
 - **Global Data Lab**: with a free account, download the Subnational HDI CSV (all countries,
   years, and indicators) from [globaldatalab.org/shdi/download](https://globaldatalab.org/shdi/download/)
   into `data/gdl/`
+- **Charts**: give the bundled Ask its own environment once (pandas, matplotlib, geopandas):
+  `cd vendor/ask && python3.13 -m venv .venv && .venv/bin/pip install -e ".[geo]"`
+  (without it, charts fall back to simple SVG line and bar charts)
 - **World Bank** and **DHS** catalogs: downloaded automatically into `data/worldbank/` and
   `data/dhs/` on first use
 

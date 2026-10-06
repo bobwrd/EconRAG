@@ -1,0 +1,91 @@
+order_id,region,segment,revenue,cost
+ORD-1000,East,Home Office,"$1,154.08",679.01
+ORD-1001,South,Home Office,"$1,100.48",735.57
+ORD-1002,South,Home Office,$932.30,452.58
+ORD-1003,South,Corporate,$387.36,360.58
+ORD-1004,North,Consumer,$953.86,469.94
+ORD-1005,South,Home Office,$163.24,96.83
+ORD-1006,West,Consumer,$320.95,167.59
+ORD-1007,East,Home Office,$436.95,220.24
+ORD-1008,South,Consumer,$279.68,228.74
+ORD-1009,West,Corporate,$566.94,326.59
+ORD-1010,East,Consumer,$163.98,140.71
+ORD-1011,West,Consumer,$658.91,526.89
+ORD-1012,West,Corporate,$624.83,334.2
+ORD-1013,South,Home Office,$755.09,402.54
+ORD-1014,South,Consumer,$915.00,816.41
+ORD-1015,West,Home Office,$783.12,414.74
+ORD-1016,West,Home Office,$228.20,156.72
+ORD-1017,West,Consumer,$670.99,512.44
+ORD-1018,South,Home Office,$449.36,323.92
+ORD-1019,North,Corporate,$901.07,402.69
+ORD-1020,East,Home Office,$392.28,207.88
+ORD-1021,East,Corporate,"$1,124.54",887.82
+ORD-1022,West,Home Office,$654.67,381.04
+ORD-1023,East,Home Office,$734.00,497.0
+ORD-1024,North,Corporate,"$1,074.54",709.71
+ORD-1025,West,Corporate,$147.10,83.2
+ORD-1026,East,Consumer,"$1,178.68",515.43
+ORD-1027,North,Consumer,"$1,064.00",500.54
+ORD-1028,East,Corporate,$882.90,564.25
+ORD-1029,South,Home Office,$255.21,160.91
+ORD-1030,West,Consumer,"$1,311.78",738.31
+ORD-1031,South,Corporate,"$1,126.35",774.04
+ORD-1032,North,Home Office,$156.69,106.78
+ORD-1033,North,Home Office,"$1,231.82",524.89
+ORD-1034,East,Consumer,"$1,878.15",837.52
+ORD-1035,South,Consumer,$460.75,381.65
+ORD-1036,South,Corporate,$225.96,150.66
+ORD-1037,North,Home Office,"$1,007.33",685.55
+ORD-1038,East,Consumer,$646.73,323.22
+ORD-1039,West,Corporate,$936.02,521.24
+ORD-1040,East,Corporate,"$1,136.81",526.9
+ORD-1041,North,Corporate,$727.52,622.14
+ORD-1042,South,Corporate,"$1,228.50",867.01
+ORD-1043,North,Home Office,"$1,328.46",849.19
+ORD-1044,North,Home Office,$792.54,628.98
+ORD-1045,North,Home Office,"$1,005.65",574.79
+ORD-1046,East,Consumer,"$1,285.61",689.77
+ORD-1047,East,Home Office,"$1,117.02",632.03
+ORD-1048,North,Corporate,$866.40,401.29
+ORD-1049,West,Home Office,$704.67,475.3
+ORD-1050,East,Corporate,"$1,989.03",880.21
+ORD-1051,South,Consumer,"$1,710.97",838.29
+ORD-1052,North,Corporate,$835.50,567.84
+ORD-1053,South,Home Office,"$1,232.22",866.26
+ORD-1054,North,Corporate,"$1,192.17",753.14
+ORD-1055,North,Home Office,"$1,170.21",703.7
+ORD-1056,South,Home Office,$865.67,523.12
+ORD-1057,East,Consumer,"$1,146.84",797.62
+ORD-1058,West,Home Office,$549.18,236.15
+ORD-1059,West,Home Office,$455.83,196.04
+ORD-1060,West,Home Office,"$1,037.16",835.38
+ORD-1061,West,Home Office,$502.11,251.92
+ORD-1062,East,Home Office,$870.73,790.17
+ORD-1063,North,Consumer,"$1,577.21",867.93
+ORD-1064,South,Corporate,$688.71,538.45
+ORD-1065,South,Consumer,$357.09,192.02
+ORD-1066,North,Corporate,$877.43,691.49
+ORD-1067,North,Corporate,"$1,068.60",466.98
+ORD-1068,East,Corporate,"$1,597.12",768.19
+ORD-1069,North,Corporate,$951.20,490.19
+ORD-1070,West,Consumer,$336.10,212.0
+ORD-1071,North,Consumer,"$1,116.79",558.49
+ORD-1072,West,Home Office,"$1,466.22",749.7
+ORD-1073,South,Corporate,"$1,528.30",897.66
+ORD-1074,East,Consumer,$187.62,116.31
+ORD-1075,West,Consumer,$515.84,323.91
+ORD-1076,North,Corporate,$785.79,707.52
+ORD-1077,West,Corporate,$127.93,77.66
+ORD-1078,West,Home Office,$193.62,171.63
+ORD-1079,North,Corporate,$212.78,174.87
+ORD-1080,North,Home Office,$300.17,141.21
+ORD-1081,North,Consumer,$298.37,185.23
+ORD-1082,South,Home Office,$760.32,712.62
+ORD-1083,South,Home Office,$319.29,135.25
+ORD-1084,North,Consumer,$855.42,670.29
+ORD-1085,North,Home Office,$740.04,661.64
+ORD-1086,West,Home Office,$458.42,400.22
+ORD-1087,East,Home Office,$372.49,177.21
+ORD-1088,West,Home Office,"$1,592.03",870.64
+ORD-1089,West,Consumer,"$2,035.96",853.15

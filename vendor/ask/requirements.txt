@@ -1,0 +1,6 @@
+pandas>=2.2
+matplotlib>=3.8
+numpy>=1.24
+# tkinter ships with the python.org installers (macOS/Windows).
+# On Debian/Ubuntu install it separately:  sudo apt install python3-tk
+# Optional: openpyxl (for "Export table..." to .xlsx), pytest (to run the tests)

@@ -1,0 +1,79 @@
+country,indicator,source,sex,age_group,area_type,year,value,status_flag,notes,source_file
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,11386.7,R,Employment (ISIC-Rev.4): Total,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,1601.1,R,"Employment (ISIC-Rev.4): Agriculture, forestry and fishing",ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,1356.1,R,Employment (ISIC-Rev.4): Manufacturing,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,2573.3,R,Employment (ISIC-Rev.4): Construction,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,958.2,R,Employment (ISIC-Rev.4): Wholesale and retail trade,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,1988.4,R,Employment (ISIC-Rev.4): Transportation and storage,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,1189.3,R,Employment (ISIC-Rev.4): Accommodation and food service,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,1824.7,R,Employment (ISIC-Rev.4): Information and communication,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,2129.6,R,Employment (ISIC-Rev.4): Financial and insurance activities,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,2440.7,R,Employment (ISIC-Rev.4): Education,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,2240.8,R,Employment (ISIC-Rev.4): Human health and social work,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,1534.4,R,Employment (ISIC-Rev.4): Public administration,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,1717.1,R,Employment (ISIC-Rev.4): Professional and technical activities,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,6224.9,R,Employment (ISIC-Rev.3.1): Total,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,1179.4,R,"Employment (ISIC-Rev.3.1): Agriculture, forestry and fishing",ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,1399.6,R,Employment (ISIC-Rev.3.1): Manufacturing,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,221.2,R,Employment (ISIC-Rev.3.1): Construction,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,229.3,R,Employment (ISIC-Rev.3.1): Wholesale and retail trade,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,1448.2,R,Employment (ISIC-Rev.3.1): Transportation and storage,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,1032.9,R,Employment (ISIC-Rev.3.1): Accommodation and food service,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,324.1,R,Employment (ISIC-Rev.3.1): Information and communication,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,591.8,R,Employment (ISIC-Rev.3.1): Financial and insurance activities,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,382.5,R,Employment (ISIC-Rev.3.1): Education,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,606.6,R,Employment (ISIC-Rev.3.1): Human health and social work,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,383.3,R,Employment (ISIC-Rev.3.1): Public administration,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,1144.2,R,Employment (ISIC-Rev.3.1): Professional and technical activities,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,5580.8,R,Employment (Aggregate): Total,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,790.8,R,"Employment (Aggregate): Agriculture, forestry and fishing",ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,273.9,R,Employment (Aggregate): Manufacturing,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,713.7,R,Employment (Aggregate): Construction,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,537.6,R,Employment (Aggregate): Wholesale and retail trade,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,901.0,R,Employment (Aggregate): Transportation and storage,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,543.6,R,Employment (Aggregate): Accommodation and food service,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,481.5,R,Employment (Aggregate): Information and communication,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,657.4,R,Employment (Aggregate): Financial and insurance activities,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,1427.6,R,Employment (Aggregate): Education,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,1488.0,R,Employment (Aggregate): Human health and social work,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,406.2,R,Employment (Aggregate): Public administration,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2024,1161.6,R,Employment (Aggregate): Professional and technical activities,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,9842.1,R,Employment (ISIC-Rev.4): Total,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,1092.8,R,"Employment (ISIC-Rev.4): Agriculture, forestry and fishing",ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,2185.9,R,Employment (ISIC-Rev.4): Manufacturing,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,2062.8,R,Employment (ISIC-Rev.4): Construction,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,1986.6,R,Employment (ISIC-Rev.4): Wholesale and retail trade,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,1512.6,R,Employment (ISIC-Rev.4): Transportation and storage,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,1400.6,R,Employment (ISIC-Rev.4): Accommodation and food service,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,480.1,R,Employment (ISIC-Rev.4): Information and communication,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,1902.8,R,Employment (ISIC-Rev.4): Financial and insurance activities,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,1858.4,R,Employment (ISIC-Rev.4): Education,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,1231.5,R,Employment (ISIC-Rev.4): Human health and social work,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,702.6,R,Employment (ISIC-Rev.4): Public administration,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,966.3,R,Employment (ISIC-Rev.4): Professional and technical activities,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,6365.9,R,Employment (ISIC-Rev.3.1): Total,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,316.2,R,"Employment (ISIC-Rev.3.1): Agriculture, forestry and fishing",ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,978.1,R,Employment (ISIC-Rev.3.1): Manufacturing,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,1198.9,R,Employment (ISIC-Rev.3.1): Construction,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,1174.2,R,Employment (ISIC-Rev.3.1): Wholesale and retail trade,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,683.0,R,Employment (ISIC-Rev.3.1): Transportation and storage,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,1092.4,R,Employment (ISIC-Rev.3.1): Accommodation and food service,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,475.2,R,Employment (ISIC-Rev.3.1): Information and communication,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,553.3,R,Employment (ISIC-Rev.3.1): Financial and insurance activities,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,1030.8,R,Employment (ISIC-Rev.3.1): Education,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,344.8,R,Employment (ISIC-Rev.3.1): Human health and social work,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,866.1,R,Employment (ISIC-Rev.3.1): Public administration,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,1091.2,R,Employment (ISIC-Rev.3.1): Professional and technical activities,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,5447.2,R,Employment (Aggregate): Total,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,258.3,R,"Employment (Aggregate): Agriculture, forestry and fishing",ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,1255.9,R,Employment (Aggregate): Manufacturing,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,1234.5,R,Employment (Aggregate): Construction,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,1458.6,R,Employment (Aggregate): Wholesale and retail trade,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,344.4,R,Employment (Aggregate): Transportation and storage,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,1294.6,R,Employment (Aggregate): Accommodation and food service,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,936.7,R,Employment (Aggregate): Information and communication,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,919.9,R,Employment (Aggregate): Financial and insurance activities,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,433.6,R,Employment (Aggregate): Education,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,672.8,R,Employment (Aggregate): Human health and social work,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,446.8,R,Employment (Aggregate): Public administration,ilostat_2025.xlsx
+Chile,Employment by economic activity,LFS,Female,25+,National,2025,225.5,R,Employment (Aggregate): Professional and technical activities,ilostat_2025.xlsx

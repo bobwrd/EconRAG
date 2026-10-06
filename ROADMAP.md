@@ -124,7 +124,12 @@ retrieval code), `get_data(source, series, countries, years)` → computed stats
       and nothing added to requests (tool schemas are at their 2,000-token budget: 1,994).
       After each answer, every time series fetched (World Bank, FRED, long-run, DHS surveys)
       becomes a line chart and every regional breakdown or ranking (Global Data Lab, DHS) a bar
-      chart, saved as SVG in `charts/` with the source written on it.
+      chart, with the source written on it. Drawn by **Ask** (the user's charting language, a
+      copy in `vendor/ask` with its own environment: pandas, matplotlib, geopandas, 295 MB) as
+      PNG, plus world **maps** when a result covers 5+ countries and an **animated bubble
+      chart** (GIF, Gapminder-style, sized by population) when an answer used two World Bank
+      indicators for the same countries. All of an answer's charts are drawn in one Ask process
+      (~4.5 s for 7 charts). Without Ask, line and bar charts fall back to plain SVG.
 
 ## Phase 3: Literature and evidence
 

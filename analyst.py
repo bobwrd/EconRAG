@@ -471,7 +471,7 @@ class Analyst:
                 print(f"\nAnswer:\n{answer}")
                 if numbers or citations:
                     print(f"\n  ⚠ Not verified against tool results: {', '.join(numbers + citations)}")
-                self.last_charts = charts.auto(self._results)  # plain Python: no tokens
+                self.last_charts = charts.auto(self._results, wb=self.wb)  # plain Python: no tokens
                 for path in self.last_charts:
                     print(f"  Chart: {path}")
                 self.remember(question, answer)

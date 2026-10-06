@@ -1,0 +1,6 @@
+# A shared library of Ask recipes you can import into any program.
+define recipe best_regions from data:
+  where revenue is not missing
+  group by region
+  show total revenue as sales
+  top 5 by sales

@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ask-lang"
+version = "0.2.1"
+description = "Ask - a beginner-friendly data-analysis language with a coding UI"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.2",       # 'ME'/'QE'/'YE' resample aliases need >= 2.2
+    "matplotlib>=3.8",
+    "numpy>=1.24",
+]
+
+[project.optional-dependencies]
+excel = ["openpyxl>=3.1"]
+geo = ["geopandas>=0.14"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+ask = "asklang.cli:main"
+
+[tool.setuptools]
+packages = ["asklang"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -69,13 +69,28 @@ def test_charts_drawn_from_tool_results_without_a_model():
         {"country": "Kenya", "year": 2023, "national": 0.628,
          "regions [name, value] (highest first)": [["Nairobi", 0.694], ["...", "2 more"], ["North Eastern", 0.487]]}]}
     paths = charts.auto([("get_data", {}, wb), ("get_data", {}, gdl), ("run_python", {}, {"output": "1"})],
-                        Path(tempfile.mkdtemp()))
-    assert [p.name.split("_", 1)[1] for p in paths] == ["NY.GDP.PCAP.KD.svg", "shdi_Kenya.svg"], paths
+                        Path(tempfile.mkdtemp()), use_ask=False)  # the SVG fallback
+    assert [p.name.split("_", 2)[2] for p in paths] == ["NY.GDP.PCAP.KD.svg", "shdi_Kenya.svg"], paths
     line, bars = (p.read_text() for p in paths)
     assert "China 25.1k" in line and "Source: World Bank" in line
     top = max(float(m) for m in re.findall(r'>(\d+(?:\.\d+)?)k</text>', line))
     assert top >= 25.067, top  # the axis reaches the highest value
     assert "Nairobi" in bars and "North Eastern" in bars and "national 0.628" in bars and "..." not in bars
+
+
+def test_ask_draws_png_line_and_map():
+    import tempfile
+    import charts
+    if not charts.ask_available():
+        print("        (vendor/ask not set up: skipped)")
+        return
+    econ = [{"economy": n, "code": c, "latest": {"year": 2023, "value": v}, "first": {"year": 2000, "value": v / 2},
+             "max": {"year": 2023, "value": v}, "min": {"year": 2000, "value": v / 2}}
+            for n, c, v in [("Kenya", "KEN", 6), ("Ghana", "GHA", 7), ("India", "IND", 9), ("Brazil", "BRA", 18),
+                            ("Nigeria", "NGA", 5)]]
+    paths = charts.auto([("get_data", {}, {"indicator": "X.Y", "name": "Test", "economies": econ})],
+                        Path(tempfile.mkdtemp()))
+    assert [p.suffix for p in paths] == [".png", ".png"] and "map" in paths[1].name, paths
 
 
 def main():

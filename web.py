@@ -321,7 +321,8 @@ class App:
             countries = [c for c in re.split(r"[,;\n]+", countries) if c.strip()]
         indicators = [i for i in params.get("indicators") or [] if str(i).strip()]
         report = workflows.compare(self.wb(), countries, params.get("topics") or None, indicators,
-                                   emit=lambda kind, text: emit({"kind": kind, "text": text}))
+                                   emit=lambda kind, text: emit({"kind": kind, "text": text}),
+                                   write=params.get("summary", True) is not False)
         rid = self.store(report, self.reports)
         return report_view(report, rid)
 

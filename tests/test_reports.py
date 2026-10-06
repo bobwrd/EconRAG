@@ -72,7 +72,26 @@ def test_report_without_groq_still_builds():
         report = workflows.compare(tt.WB, ["KEN", "GHA"], ["health"])
     finally:
         groq_client.GROQ_API_KEY, groq_client.OPENROUTER_API_KEY = keys
-    assert report["summary"]["status"] == "unavailable" and report["sections"][0]["table"]["rows"]
+    # the free Python summary stands in, saying why
+    assert report["summary"]["status"] == "python" and "GROQ_API_KEY" in report["summary"]["reason"]
+    assert report["sections"][0]["table"]["rows"]
+
+
+def test_unticked_summary_is_written_by_python_for_free():
+    original = workflows.groq_post
+    workflows.groq_post, sent = tt._fake_groq([])
+    try:
+        report = workflows.compare(tt.WB, ["Kenya", "Ghana"], ["income", "growth", "health"], write=False)
+    finally:
+        workflows.groq_post = original
+    s = report["summary"]
+    assert sent == [] and s["status"] == "python" and s["tokens"] == 0
+    lines = s["text"].splitlines()
+    assert len(lines) >= 5 and all(l.startswith("- **") for l in lines)
+    assert any("Average annual growth" in l for l in lines) and any("times as high" in l for l in lines)
+    # every number in it comes from the fact sheet
+    assert workflows.verify.unsupported_numbers(s["text"], json.dumps(report["facts"]), "") == []
+    assert "listed by Python" in report_export.summary_status(report)
 
 
 def test_compare_rejects_bad_input():
@@ -109,7 +128,11 @@ def test_web_report_endpoints():
     original = workflows.compare
     workflows.compare = lambda *a, **k: (k["emit"]("step", "World Bank: x"), report)[1]
     try:
-        status, body = test_web._request(app, "POST", "/api/report", {"kind": "compare", "countries": "Kenya, Ghana"})
+        seen = {}
+        workflows.compare = lambda *a, **k: (seen.update(k), k["emit"]("step", "World Bank: x"), report)[2]
+        status, body = test_web._request(app, "POST", "/api/report",
+                                         {"kind": "compare", "countries": "Kenya, Ghana", "summary": False})
+        assert seen["write"] is False
         events = [json.loads(l) for l in body.decode().splitlines()]
         assert status == 200 and events[0]["text"] == "World Bank: x"
         done = events[-1]

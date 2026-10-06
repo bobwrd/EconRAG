@@ -210,7 +210,8 @@ one Groq request writes the summary, verify.py checks it; exports PDF, Word, Mar
 BibTeX, data zip; no reproduce script for now):
 - [x] **Engine + compare countries** (`workflows.py compare`, Oct 2026): 2-6 countries x topic
       bundles (income, growth, poverty, health, education, infrastructure, jobs, population,
-      macro) + extra indicators; average growth computed in Python; summary ~2-5K tokens.
+      macro) + extra indicators; average growth computed in Python; summary ~2-5K tokens, or
+      free (a "Write a summary" checkbox: unticked, Python lists highest/lowest per indicator).
 - [ ] **Country brief**: growth, poverty, inequality, human development vs peers + recent research.
 - [ ] **"What works" review**: evidence on an intervention (cash transfers, deworming,
       microfinance) by outcome and region, from the RCT databases.

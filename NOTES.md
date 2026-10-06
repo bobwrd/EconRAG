@@ -9,13 +9,14 @@ papers) — Python computes every number, and `verify.py` checks the answer agai
 the tool results. Offline (or if Groq fails), the original local pipeline answers with phi3.5.
 No paid API: FRED and Groq's free tier are the only network calls.
 
-**Direction (Oct 2026):** refocusing on development economics for a general audience —
-see `ROADMAP.md` for the phased plan and what's done (Phases 0a/0b, 1, much of 3). First
-benchmark run (Oct 6, main): 27/30 — failures fixed in code on branch `after-benchmark`, which
-also adds peer groups, `devecon.py`, `longrun.py` (Phase 4; data files still to be saved by
-hand) and 14 harder benchmark questions. Next: re-run the benchmark on that branch. A general chatbot's answers to the same benchmark are
-kept locally in `eval/external/` (2/25 strict, ~6/25 lenient; mostly stale numbers and the
-old $2.15 poverty line).
+**Direction (Oct 2026):** development economics for a general audience — see `ROADMAP.md` for
+the phased plan. As of Oct 7: Phases 0-4 and 6 done (local web UI `web.py`, setup script
+`setup_assistant.py` for other people's own copies); Phase 5 (reports, `workflows.py`) has its
+engine and "Compare countries"; next: country brief, poverty profile, "what works". Benchmark:
+27/30 on Oct 6 (main); the fixes since and the 45-question version haven't been re-measured (the
+user tested by hand instead). A general chatbot's answers to the same benchmark are kept locally
+in `eval/external/` (2/25 strict, ~6/25 lenient; mostly stale numbers and the old $2.15 poverty
+line).
 
 ## Hardware constraint (read this first)
 
@@ -156,8 +157,11 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
 - `workflows.py` + `report_export.py` — reports (Phase 5). A fixed Python recipe gathers the data
   (no model), Python computes and writes every table, then ONE Groq request without tools writes a
   150-250 word summary from a compact fact sheet (~2-5K tokens; a chat question is 10-30K);
-  `verify.py` checks it against the fact sheet, one revision request if it fails. Without Groq the
-  report is built without a summary. So far: `compare` (2-6 countries x topic bundles in `TOPICS`
+  `verify.py` checks it against the fact sheet, one revision request if it fails. "Write a
+  summary" checkbox (web) / `--no-summary` (CLI): unticked, `python_summary` lists highest/lowest
+  per indicator from the fact sheet instead — zero tokens; also used when Groq is unavailable.
+  "x times as high" only for $ amounts and per-1,000 rates (ratios of growth rates or life
+  expectancy read oddly). So far: `compare` (2-6 countries x topic bundles in `TOPICS`
   + extra indicators by id or words). Exports from one report dict: PDF (fpdf2; Unicode font from
   `PDF_FONTS`, else Helvetica with "?" for non-Latin-1), Word (python-docx), Markdown/LaTeX zips
   with charts and references.bib, BibTeX, the chat's data zip. Charts: lines (+ maps at 5+

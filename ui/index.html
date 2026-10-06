@@ -65,6 +65,8 @@
     <label>Extra indicators <span class="muted">(optional: a World Bank id or a few words, separated by commas)</span>
       <input type="text" id="r-indicators" placeholder="female labor force participation, NY.GDP.MKTP.KD.ZG" autocomplete="off">
     </label>
+    <label class="check"><input type="checkbox" id="r-summary" checked> Write a summary with the model
+      <span class="muted">(~2–5K Groq tokens; unticked: Python lists the highlights, free)</span></label>
     <button type="submit" id="r-make">Make report</button>
   </form>
   <div id="report-list"></div>

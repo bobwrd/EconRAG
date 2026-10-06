@@ -48,7 +48,8 @@ words.
 
 **Reports** (in the web page's Reports tab, or from the command line): compare 2-6 countries on
 income, growth, poverty, health, education and more. Python fetches every number and builds every
-table; the model writes only a short summary, which is fact-checked. Download as PDF, Word,
+table; the model writes only a short summary, which is fact-checked (~2-5K Groq tokens; untick
+"Write a summary" and Python lists the highlights instead, for free). Download as PDF, Word,
 Markdown, LaTeX (with BibTeX), or the data itself. Country briefs, poverty profiles and
 "what works" reviews are next.
 
@@ -100,6 +101,7 @@ need no setup. Free tiers: Groq allows about 15 questions a day; OpenAlex about 
 .venv/bin/python web.py                          # web page at http://127.0.0.1:8765 (this computer only)
 .venv/bin/python ask.py                          # or ask questions in the terminal
 .venv/bin/python workflows.py compare Kenya Ghana Nigeria   # a report: PDF, Word, Markdown, LaTeX, data
+                                                             # (--no-summary: no Groq tokens)
 .venv/bin/python longrun.py "South Korea" Ghana  # long-run comparison from the command line
 
 .venv/bin/python tests/test_tools.py             # tool tests (no API usage)

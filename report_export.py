@@ -50,6 +50,9 @@ def summary_status(report: dict) -> str:
         return "Every number in this summary was found in the data below (checked automatically; wording is not checked)."
     if s["status"] == "unverified":
         return f"Not found in the data (treat with caution): {', '.join(s['unverified'])}."
+    if s["status"] == "python":
+        return ("Summary listed by Python from the tables (no model)"
+                + (f"; the model was unavailable: {s['reason']}" if s.get("reason") else "") + ".")
     return f"No written summary: {s.get('reason', 'the model was unavailable')}."
 
 

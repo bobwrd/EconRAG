@@ -9,8 +9,9 @@ Reports people repeat (ROADMAP Phase 5). Each report is a fixed recipe:
 
 So tables can't contain invented numbers, a report costs ~2-5K Groq tokens
 (a chat question: 10-30K), and the same inputs give the same structure.
-Without a Groq key (or when Groq is down) the report is still built, just
-without the written summary.
+Untick "Write a summary" (web) or pass --no-summary (command line) for a
+summary written by Python instead: highest/lowest per indicator, no tokens. The
+same happens without a Groq key or when Groq is down.
 
     .venv/bin/python workflows.py compare Kenya Ghana Nigeria
     .venv/bin/python workflows.py compare India China --topics income,growth,health
@@ -113,6 +114,31 @@ def write_summary(facts: dict, prompt: str, emit=lambda *_: None) -> dict:
 groq_post = groq_client.post  # replaced in tests
 
 
+def python_summary(facts: dict, reason: str = "") -> dict:
+    """The free summary: one line per indicator, highest and lowest, straight from
+    the fact sheet (so nothing to fact-check). Used when the checkbox is unticked,
+    or when the model is unavailable."""
+    lines = []
+    for row in facts["indicators"]:
+        values = row["values"]
+        if len(values) < 2 or "highest" not in row and not row["indicator"].startswith("Average annual growth"):
+            continue
+        when = lambda v: v.get("year") or v.get("years")  # noqa: E731
+        if "highest" in row:
+            hi, lo = row["highest"], row["lowest"]
+        else:  # computed growth row: rank the formatted values
+            ranked = sorted(values, key=lambda n: float(values[n]["value"].replace(",", "")))
+            hi, lo = ranked[-1], ranked[0]
+        line = (f"**{row['indicator']}**: highest in {hi} ({values[hi]['value']}, {when(values[hi])}), "
+                f"lowest in {lo} ({values[lo]['value']}, {when(values[lo])})")
+        if row.get("highest_to_lowest_ratio"):
+            line += f", {row['highest_to_lowest_ratio']} times as high"
+        if len({str(when(v)) for v in values.values()}) > 1:
+            line += "; years differ"
+        lines.append(f"- {line}.")
+    return {"text": "\n".join(lines), "status": "python", "reason": reason, "unverified": [], "tokens": 0}
+
+
 # ------------------------------------------------------------------ compare countries
 def resolve_indicator(wb, text: str) -> str:
     """An indicator id, or the best catalog match for a phrase ("female labor force")."""
@@ -125,8 +151,9 @@ def resolve_indicator(wb, text: str) -> str:
 
 
 def compare(wb, countries: list[str], topics: list[str] | None = None, indicators: list[str] | None = None,
-            emit=lambda *_: None) -> dict:
-    """Report comparing 2-6 countries on topic bundles and/or extra indicators."""
+            emit=lambda *_: None, write: bool = True) -> dict:
+    """Report comparing 2-6 countries on topic bundles and/or extra indicators.
+    write=False: the summary is written by Python (no Groq tokens)."""
     codes = list(dict.fromkeys(wb.country(c) for c in countries))
     if not 2 <= len(codes) <= MAX_COUNTRIES:
         raise ValueError(f"compare needs 2-{MAX_COUNTRIES} different countries (got {len(codes)})")
@@ -175,7 +202,8 @@ def compare(wb, countries: list[str], topics: list[str] | None = None, indicator
         if len(values) >= 2:
             hi, lo = max(values, key=lambda v: v[1]), min(values, key=lambda v: v[1])
             fact["highest"], fact["lowest"] = hi[0], lo[0]
-            if lo[1] > 0 and indicator not in SURVEY_BASED:
+            # ratios only where "x times as high" means something: money levels, rates per 1,000
+            if lo[1] > 0 and indicator not in SURVEY_BASED and ("$" in row_name or "per 1,000" in row_name):
                 fact["highest_to_lowest_ratio"] = round(hi[1] / lo[1], 1)
         facts_rows.append(fact)
 
@@ -202,7 +230,9 @@ def compare(wb, countries: list[str], topics: list[str] | None = None, indicator
 
     title = f"{', '.join(names[:-1])} and {names[-1]}: a comparison"
     facts = {"countries": names, "indicators": facts_rows}
-    summary = write_summary(facts, SUMMARY_PROMPT, emit)
+    summary = write_summary(facts, SUMMARY_PROMPT, emit) if write else python_summary(facts)
+    if summary["status"] == "unavailable":  # no Groq: the free summary instead of none
+        summary = python_summary(facts, reason=summary["reason"])
     report = {
         "kind": "compare", "title": title, "created": datetime.datetime.now().isoformat(timespec="seconds"),
         "inputs": {"countries": names, "topics": topics, "indicators": indicators or []},
@@ -253,17 +283,19 @@ def main(argv: list[str]) -> int:
     p.add_argument("--topics", help=f"comma-separated, default {','.join(DEFAULT_TOPICS)}")
     p.add_argument("--indicators", action="append", help="extra indicator: id or a few words (repeatable)")
     p.add_argument("--out", default=str(REPORTS_DIR))
+    p.add_argument("--no-summary", action="store_true", help="summary written by Python: no Groq tokens")
     args = parser.parse_args(argv)
 
     import report_export
     from worldbank import WorldBank
     wb = WorldBank()
     report = compare(wb, args.countries, args.topics.split(",") if args.topics else None,
-                     args.indicators, emit=lambda kind, text: print(f"  {text}", flush=True))
+                     args.indicators, emit=lambda kind, text: print(f"  {text}", flush=True),
+                     write=not args.no_summary)
     folder = report_export.write_all(report, Path(args.out), wb)
     s = report["summary"]
     print(f"\n{report['title']}\nSummary: {s['status']}" + (f" — not verified: {s['unverified']}" if s["unverified"] else "")
-          + (f" ({s.get('reason')})" if s["status"] == "unavailable" else f", {s['tokens']} tokens")
+          + (f" ({s['reason']})" if s.get("reason") else "") + f", {s['tokens']} Groq tokens"
           + f"\nSaved in {folder}/")
     return 0
 

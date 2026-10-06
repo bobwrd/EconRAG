@@ -365,7 +365,9 @@ function renderReport(card, r) {
     ? '<span class="badge ok">✓ Every number in the summary is in the data</span><span class="muted badge-note">Wording isn\'t checked.</span>'
     : s.status === "unverified"
       ? `<span class="badge warn">⚠ Not found in the data: ${esc(s.unverified.join(", "))}</span>`
-      : `<span class="badge neutral">No written summary: ${esc(s.reason || "model unavailable")}</span>`;
+      : s.status === "python"
+        ? `<span class="badge neutral">Highlights listed by Python (no model, no tokens)${s.reason ? " — model unavailable" : ""}</span>`
+        : `<span class="badge neutral">No written summary: ${esc(s.reason || "model unavailable")}</span>`;
   let h = `<h2 class="r-title">${esc(r.title)}</h2><p class="muted">Made ${esc(r.created.replace("T", " "))}` +
     (s.tokens ? ` · ${s.tokens.toLocaleString()} tokens` : "") + "</p>";
   h += '<div class="downloads">' + Object.keys(r.formats).map(f =>
@@ -391,7 +393,8 @@ async function makeReport() {
   if (busy) return;
   const topics = [...document.querySelectorAll("#r-topics input:checked")].map(i => i.value);
   const body = {kind: "compare", countries: $("#r-countries").value,
-    topics, indicators: $("#r-indicators").value.split(",").map(x => x.trim()).filter(Boolean)};
+    topics, indicators: $("#r-indicators").value.split(",").map(x => x.trim()).filter(Boolean),
+    summary: $("#r-summary").checked};
   busy = true;
   $("#r-make").disabled = true;
   const card = document.createElement("article");

@@ -10,7 +10,7 @@ won't change. This project wins on what they can't do reliably:
 |---|---|---|
 | Exact, current numbers (poverty, GDP, health, education) | Often outdated or guessed | Fetched live from the source, computed in Python, fact-checked |
 | Provenance | Vague | Every number names its source, series, and year |
-| Reproducibility | No | Every answer can export its data (CSV) and a script that recreates each number |
+| Reproducibility | No | Every answer and report exports its data (zip: full series + what was fetched); run_python calculations show their script |
 | Development-economics conventions | Inconsistent | Encoded in code: PPP vs market rates, poverty-line vintages, GDP vs GNI, survey years |
 | "What works" evidence | Blends real and invented studies | Grounded in RCT/evaluation databases; citations verified to exist |
 | Plain explanations for non-economists | Good | Kept: a plain-language answer first, technical detail on request |
@@ -62,7 +62,7 @@ and resumes where it left off.
       chatbot also answered: 23/25 vs 2/25. Fit in one day's budget (~10K tokens/question). Real
       failures: a stale year the model passed itself (Niger), a market-rate-only answer to a PPP trap
       (India), a paper's own figure not quoted (race gap); plus 4 false "not verified" flags on
-      correct answers. All fixed in code on branch `after-benchmark` (not yet re-measured).
+      correct answers. All fixed in code, now in `main` (not yet re-measured).
       14 harder questions added for the next phases (31 → 45): 5 `compute` (growth rates,
       doubling time, ratios, population-weighted averages, peer groups), 5 `dev_lit`
       (microcredit, deworming, cash transfers, graduation, the $3.00 line), 4 `longrun`.
@@ -113,9 +113,10 @@ retrieval code), `get_data(source, series, countries, years)` → computed stats
       the script under macOS `sandbox-exec` — no network, writes only to its temp folder, 10s
       CPU / 15s wall clock, 3,000-character output cap. The script gets `DATA[series][ISO3] =
       {year: value}`, `devecon`, numpy, scipy.stats (no pandas/statsmodels: not installed, not
-      needed so far). Fine for personal use; **not** a security boundary for other users —
-      before a public UI (Phase 6), move it into a container or VM.
-- [x] `devecon.py` helper library (28 tests, no network), built Oct 2026; not yet exposed as a tool: PPP conversion, constant-price rebasing, CAGR,
+      needed so far). Fine for personal use; **not** a security boundary for other users. Phase 6
+      chose a localhost-only UI and own copies, not a public site; if it's ever made public, move
+      this into a container or VM first. Off (refuses to run) where macOS's sandbox is missing.
+- [x] `devecon.py` helper library (28 tests, no network), built Oct 2026; available inside run_python (not a tool of its own): PPP conversion, constant-price rebasing, CAGR,
       poverty gap / squared gap, Gini and Lorenz from distributions, per-capita, income-group
       averages (population-weighted vs simple), latest-available-year logic.
 - [x] Numbers the script prints count as tool results for `verify.py` (automatic: every
@@ -151,7 +152,7 @@ retrieval code), `get_data(source, series, countries, years)` → computed stats
 - [x] **OpenAlex** (free, ~250M works): `search_literature` tool (abstracts count as
       evidence for the fact-check) and citation existence checks: unsupported citations are
       labeled "real, not retrieved" vs "likely invented" in the revision feedback. Built Oct
-      2026 on branch `phase3-citations-retrieval`; untested against live Groq.
+      2026; in use with live Groq since.
 - [x] **"What works" evidence: J-PAL** (`jpal.py`, Oct 2026): 1,318 of the 1,321 evaluation summaries
       (3 pages return server errors on J-PAL's side; listed via the sitemap; robots.txt allows
       /evaluation/), ~90 min once at one page a

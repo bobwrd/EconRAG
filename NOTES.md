@@ -201,8 +201,10 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
   `pwt.growth_accounting` splits growth per worker into capital, schooling and TFP.
 - `devecon.py` — tested development-economics formulas (CAGR, doubling time, rebasing, FGT poverty
   measures, Gini/Lorenz/Palma, population-weighted group means with coverage, growth
-  decomposition, beta/sigma convergence). Not yet a tool; meant for the Phase 2 sandbox.
-- `PAPER_PROPOSAL.md` — 15 open-access development papers proposed for `docs/`, awaiting approval.
+  decomposition, beta/sigma convergence). Available to run_python scripts as `devecon`; not a
+  tool of its own (tool schemas are re-sent with every request).
+- `PAPER_PROPOSAL.md` — the 15 open-access development papers chosen for `docs/` (approved and
+  ingested Oct 2026); their links are also in `papers.json` for the setup script.
 - `charts.py` — charts drawn after each answer from the tool results (no model, no tokens):
   lines for time series, bars for regions/rankings, maps for 5+ countries, and an animated
   bubble chart for two World Bank indicators over time; saved in `charts/` (gitignored).

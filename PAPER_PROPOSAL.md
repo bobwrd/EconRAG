@@ -1,7 +1,7 @@
 # Development library (ROADMAP Phase 3)
 
-Approved Oct 6 2026; 14 downloaded into `docs/` and ingested (#2 still needs a browser
-download, then add it to docs/ as `Haushofer_Shapiro_2016_cash_transfers_Kenya.pdf` and rerun ingest.py).
+Approved Oct 6 2026; all 15 are in `docs/` and ingested (#2 had to be saved from a browser: its
+host serves scripts a challenge page, so `setup_assistant.py` asks other users to do the same).
 #8 turned out to be 37 MB. Links checked 2026-10-06 (HTTP 200, `application/pdf`,
 no paywall, unless noted). Total ≈ 33 MB for the 13 with known sizes (≈ 35-40 MB with #2 and #8).
 

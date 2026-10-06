@@ -12,8 +12,9 @@ Inside, the script sees:
     NAMES[code] = country name
     devecon (tested formulas), numpy as np, scipy.stats, math, statistics
 
-Fine for personal use. Not a security boundary for untrusted users: before a
-public web UI (Phase 6), run it in a container or VM instead.
+Fine for personal use. Not a security boundary for untrusted users: the web UI
+(web.py) listens on this computer only; if it's ever made public, run this in a
+container or VM instead. Where sandbox-exec is missing (not macOS), run() refuses.
 """
 
 import json

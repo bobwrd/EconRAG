@@ -433,7 +433,8 @@ def main():
     warm_f = pool.submit(warm_up, agent, model)  # first calls pay one-time setup
 
     analyst = make_analyst(m)
-    print(f"Answering with {GROQ_MODEL} via Groq (tools: papers, World Bank, FRED, Opportunity Atlas); "
+    print(f"Answering with {GROQ_MODEL} via Groq (tools: papers, OpenAlex, J-PAL, World Bank, FRED, long-run, "
+          "DHS, Global Data Lab, Opportunity Atlas, run_python); "
           f"local {OLLAMA_MODEL} if Groq is unreachable." if analyst else
           f"Answering locally with {OLLAMA_MODEL} (set GROQ_API_KEY in .env for the online analyst).")
 

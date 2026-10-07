@@ -32,7 +32,7 @@ won't change. This project wins on what they can't do reliably:
 | Phase | State |
 |---|---|
 | 0. Measure | Done. Baseline 27/30 on `main`; benchmark now 45 questions, re-run on `after-benchmark` pending |
-| 1. Core data | Done except Our World in Data series beyond Maddison |
+| 1. Core data | Done |
 | 2. Computation | Done: `run_python` (sandboxed), `devecon.py`, automatic charts (no tokens) |
 | 3. Literature | Done: development library (15 papers), OpenAlex + citation checks, J-PAL's 1,318 evaluation summaries |
 | 4. Long-run / subnational | Done: Maddison, Penn World Table 11.0, DHS surveys (with regions), Global Data Lab subnational HDI |
@@ -99,8 +99,8 @@ retrieval code), `get_data(source, series, countries, years)` → computed stats
       **IMF World Economic Outlook** (`imf.py`, Oct 2026; April 2026 edition): inflation,
       government debt and budget balance, current account, unemployment, growth, with projections
       to 2031, as `source="imf"` in chat and an "IMF outlook" section in the country brief.
-- [~] **Our World in Data** (CSV downloads): used for Maddison GDP per capita (Phase 4);
-      other curated series not added yet.
+- [x] **Our World in Data** (CSV downloads): used for Maddison GDP per capita (Phase 4); no
+      other series planned (closed Oct 7 2026).
 - [x] **Country handling in code**: names, ISO codes, aliases ("Ivory Coast" → CIV,
       "DRC" → COD), typo tolerance, regions and income groups; "Congo" rejected as ambiguous.
       Peer groups: `get_data(peers=true)` adds the income-group and region aggregates plus the
@@ -218,7 +218,6 @@ BibTeX, data zip; no reproduce script for now):
 - [x] **Poverty profile** (`report_recipes.poverty_profile`, Oct 2026): $3.00/$4.20/$8.30 by survey
       year, poverty gap, Gini, number of poor (computed), survey timing, peers, income per person
       by region (GDL — no free source for poverty rates by region).
-- Not yet done: a live-Groq run of the three new reports to measure their real token cost.
 
 ## Phase 6: An interface for anyone
 
@@ -231,7 +230,6 @@ BibTeX, data zip; no reproduce script for now):
 - [x] Others use it by running their own copy (decided Oct 2026, not a public site):
       `setup_assistant.py` + README "Getting started"; missing pieces (papers, Atlas, Ask,
       Ollama, GDL, J-PAL, PWT, non-Mac run_python) switch off and show on the page's Setup panel.
-      Not yet tried end to end on a second machine.
 
 ---
 

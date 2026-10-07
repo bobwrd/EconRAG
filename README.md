@@ -79,8 +79,8 @@ needs the macOS sandbox and switches itself off elsewhere. You need Python 3.11+
 recommended) and about 3 GB of disk; 8 GB of RAM is enough.
 
 ```bash
-git clone https://github.com/bobwrd/ai-rag-econ-assistant.git
-cd ai-rag-econ-assistant
+git clone https://github.com/bobwrd/EconRAG.git
+cd EconRAG
 python3 setup_assistant.py            # shows what's set up (changes nothing)
 python3 setup_assistant.py install    # walks through each missing step, asking first
 ```

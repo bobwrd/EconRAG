@@ -68,8 +68,9 @@ with a note.
 Online, answers come from a hosted open model (Groq, free tier). Offline, a local pipeline
 (Ollama + `phi3.5`) answers from the paper library.
 
-**How it does**: on a 30-question benchmark scored by code, 27/30 (Oct 2026); a general
-chatbot without web search scored 2/25 on the same questions, mostly from outdated numbers.
+**How it does**: on a benchmark scored by code, 27/30 (Oct 6 2026) and 27/28 on the latest
+version (Oct 7; the one miss was a grading quirk on a correct answer); a general chatbot without
+web search scored 2/25 on the same questions, mostly from outdated numbers.
 
 ## Getting started
 

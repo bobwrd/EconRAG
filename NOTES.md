@@ -14,8 +14,12 @@ No paid API: every source is free (FRED needs a free key; Groq's free tier).
 the phased plan. As of Oct 7: every phase is built — local web UI `web.py`, setup script
 `setup_assistant.py` for other people's own copies, and four reports (`workflows.py`,
 `report_recipes.py`): compare countries, country brief, poverty profile, "what works". Benchmark:
-27/30 on Oct 6 (main); the fixes since and the 45-question version haven't been re-measured (the
-user tested by hand instead). A general chatbot's answers to the same benchmark are kept locally
+27/28 on Oct 7 (run `oct7`, current main; 28 of 45 questions — stopped when Groq's and OpenRouter's free daily limits ran out, and the user closed the benchmark there): data 14/14, US tools 5/5, traps 6/7, calculations 2/2. The one fail is a grading miss:
+the answer gave India's GDP per capita at market rates and in PPP, but wrote "market‑exchange" with
+a non-breaking hyphen, which the pattern doesn't match. Not run: 3 calculation, 5 development-
+literature and 4 long-run questions; no IMF or report questions exist. Seen during the run: two
+HTTP 400s from the model's tool calls (null `start`/`end`; malformed JSON), both recovered by the
+retry; the 28 questions cost 7-34K tokens each, 391K in all (traps and calculations the most). A general chatbot's answers to the same benchmark are kept locally
 in `eval/external/` (2/25 strict, ~6/25 lenient; mostly stale numbers and the old $2.15 poverty
 line).
 
@@ -498,6 +502,7 @@ Measured on `eval/` (small sets — treat 1-2 question differences as noise):
 | Fact in top-5 after reranking (original / reworded) | 13/18, — | 16/18, 6/12 (15/18, 6/12 with the 25-paper library) |
 | Development papers, everyday wording (`--dev`), top-5 after reranking | — | 7/11 |
 | Online analyst on the benchmark (main, Oct 6) | — | 27/30 (same 25 as the chatbot: 23/25 vs 2/25) |
+| Online analyst on the benchmark (main, Oct 7; 28 of 45 run) | — | 27/28 (the fail is a grading miss) |
 | phi3.5 answers correct (first 21 eval questions; run cut short) | 12/21 | 15/21 |
 | Prompts silently truncated by Ollama | most doc prompts | none |
 

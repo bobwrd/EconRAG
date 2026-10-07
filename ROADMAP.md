@@ -31,7 +31,7 @@ won't change. This project wins on what they can't do reliably:
 
 | Phase | State |
 |---|---|
-| 0. Measure | Done. Baseline 27/30 on `main`; benchmark now 45 questions, re-run on `after-benchmark` pending |
+| 0. Measure | Done. 27/30 on Oct 6; 27/28 on Oct 7 (28 of the 45 questions run, then closed) |
 | 1. Core data | Done |
 | 2. Computation | Done: `run_python` (sandboxed), `devecon.py`, automatic charts (no tokens) |
 | 3. Literature | Done: development library (15 papers), OpenAlex + citation checks, J-PAL's 1,318 evaluation summaries |
@@ -40,7 +40,7 @@ won't change. This project wins on what they can't do reliably:
 | 6. Interface | Done: local web UI (`web.py`) and a setup script for other people's own copies (`setup_assistant.py`) |
 
 The Oct 6 work (benchmark fixes, peer groups, `devecon.py`, `longrun.py`, the development library,
-multi-column PDF extraction) is merged into `main`; the 45-question benchmark hasn't been re-run on it.
+multi-column PDF extraction) is merged into `main` and was benchmarked on Oct 7 (27/28, below).
 
 ## Phase 0: Measure cheaply
 
@@ -66,7 +66,11 @@ and resumes where it left off.
       14 harder questions added for the next phases (31 → 45): 5 `compute` (growth rates,
       doubling time, ratios, population-weighted averages, peer groups), 5 `dev_lit`
       (microcredit, deworming, cash transfers, graduation, the $3.00 line), 4 `longrun`.
-      Next: `benchmark.py run after-fixes` on the branch (~2 days of Groq budget).
+      **Oct 7 2026 (`oct7`, main with reports and IMF): 27/28** — data 14/14, US tools 5/5, traps
+      6/7, calculations 2/2. Stopped at question 29 when the free daily limits ran out; the user
+      closed the benchmark there (dev_lit, longrun and 3 compute questions not run). The one fail
+      (India PPP vs market rates) gave both figures but wrote "market‑exchange" with a non-breaking
+      hyphen the grading pattern doesn't match.
       - ~15 data questions, answers computed directly from source data by a script, so
         they stay correct when the data updates
       - ~5 literature questions with an expected-fact pattern (like `eval/questions.json`)

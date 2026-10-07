@@ -16,7 +16,16 @@ from urllib3.util.retry import Retry
 
 load_dotenv()
 
-FRED_API_KEY = os.environ["FRED_API_KEY"]
+FRED_API_KEY = os.environ.get("FRED_API_KEY", "")  # optional: without it only FRED data is off
+
+
+def _key() -> str:
+    """The key, or a clear error the callers already handle (the analyst shows it to the model;
+    ask.py skips the live-data answer). Importing this module must never fail without it."""
+    if not FRED_API_KEY:
+        raise RuntimeError("no FRED_API_KEY in .env: FRED data is off on this computer "
+                           "(free key: https://fred.stlouisfed.org/docs/api/api_key.html)")
+    return FRED_API_KEY
 FRED_URL = "https://api.stlouisfed.org/fred/series/observations"
 FRED_SEARCH_URL = "https://api.stlouisfed.org/fred/series/search"
 FRED_SERIES_URL = "https://api.stlouisfed.org/fred/series"
@@ -63,7 +72,7 @@ def get_latest_observation(series_id: str, units: str | None = None) -> tuple[st
     """Returns (date, value) for the most recent observation of a series."""
     params = {
         "series_id": series_id,
-        "api_key": FRED_API_KEY,
+        "api_key": _key(),
         "file_type": "json",
         "sort_order": "desc",
         # A few rows, not 1: FRED marks missing observations with "." (e.g. a
@@ -81,7 +90,7 @@ def get_latest_observation(series_id: str, units: str | None = None) -> tuple[st
 
 
 def _get(url: str, **params) -> dict:
-    response = _session.get(url, params={**params, "api_key": FRED_API_KEY, "file_type": "json"},
+    response = _session.get(url, params={**params, "api_key": _key(), "file_type": "json"},
                             timeout=TIMEOUT)
     if response.status_code == 400:  # FRED explains bad series ids / dates in the body
         raise ValueError(response.json().get("error_message", response.text[:200]))

@@ -118,6 +118,8 @@ def fetch(path: Path = DATA, limit: int | None = None):
 def _country_names() -> dict[str, str]:
     """Lowercase country name or alias -> display name, from the cached World Bank list."""
     import worldbank
+    if not (worldbank.CATALOG_DIR / "countries.json").exists():  # first run, before the World Bank client
+        worldbank.build_catalog()
     countries = json.loads((worldbank.CATALOG_DIR / "countries.json").read_text())
     short = [c["name"].split(",")[0] for c in countries if not c["aggregate"]]
     display = {c["id"]: c["name"] if short.count(c["name"].split(",")[0]) > 1 else c["name"].split(",")[0]

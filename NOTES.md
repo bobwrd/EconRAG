@@ -216,7 +216,7 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
   reports one; Haushofer & Shapiro's host serves scripts a challenge page, so `browser_only`).
   A missing paper index or Atlas now switches that tool off instead of crashing ask.py/web.py
   (`ask.load_index`, `ask._optional`, `Analyst.atlas` loads lazily). Tests: `tests/test_setup.py`.
-- `fred.py` — FRED client: 4 series fetched concurrently, retried on 429/5xx, cached 15 min
+- `fred.py` — FRED client (`FRED_API_KEY` optional since Oct 7 2026: without it only FRED calls fail, with a clear error; a fresh copy used to crash on import): 4 series fetched concurrently, retried on 429/5xx, cached 15 min
   in-process (local path). `search_series` / `series_stats` serve any series to the analyst
   (stats + text sparkline). Also `python fred.py` to sanity-check the API key/network.
 - `analyst.py` — the online tool-using agent (tool schemas, system prompt, loop).

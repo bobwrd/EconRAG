@@ -12,6 +12,8 @@ in the answer traces back to what was actually retrieved.
   and income groups (growth, poverty, inequality, health, education, labor, trade), plus
   growth forecasts from Global Economic Prospects and comparisons with a country's income
   group and region
+- **IMF World Economic Outlook**: inflation, government debt and budget balance, current
+  account, unemployment and growth, with the IMF's projections about five years ahead
 - **Long-run data**: Maddison Project GDP per capita back to year 1, and the Penn World Table
   (output, capital, schooling, productivity since 1950) — two-country comparisons with
   overtaking and divergence years, and growth accounting
@@ -127,6 +129,7 @@ need no setup. Free tiers: Groq allows about 15 questions a day; OpenAlex about 
 .venv/bin/python tests/test_web.py               # web UI (no API usage)
 .venv/bin/python tests/test_setup.py             # setup script
 .venv/bin/python tests/test_reports.py           # reports (World Bank data, no API usage)
+.venv/bin/python tests/test_imf.py               # IMF World Economic Outlook (live data)
 
 .venv/bin/python eval/benchmark.py run NAME                # 45-question benchmark (resumable;
                                                            # ~2 days of Groq's free tier)

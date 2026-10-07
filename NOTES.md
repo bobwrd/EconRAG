@@ -3,11 +3,12 @@
 An economics research assistant specialized in **development economics** (worldwide) and
 **economic opportunity in the US**. Online (with `GROQ_API_KEY`), a tool-using analyst
 (`analyst.py`) answers from the sources it chooses between: World Bank World Development
-Indicators (~1,500 indicators x 217 economies), any FRED series, Opportunity Atlas county
+Indicators (~1,500 indicators x 217 economies), IMF World Economic Outlook forecasts, any FRED
+series, Opportunity Atlas county
 data (every US county), and a personal library of econ PDFs (mostly Opportunity Insights
 papers) — Python computes every number, and `verify.py` checks the answer against
 the tool results. Offline (or if Groq fails), the original local pipeline answers with phi3.5.
-No paid API: FRED and Groq's free tier are the only network calls.
+No paid API: every source is free (FRED needs a free key; Groq's free tier).
 
 **Direction (Oct 2026):** development economics for a general audience — see `ROADMAP.md` for
 the phased plan. As of Oct 7: every phase is built — local web UI `web.py`, setup script
@@ -203,6 +204,8 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
   - J-PAL's saved results text ends with the site footer ("J-PAL 400 Main Street ...") on 822 of
     1,318 pages, and ongoing studies say only "results forthcoming": `results_text` cuts both. The
     chat's `search_evaluations` tool (jpal.py) still shows the footer when a result is short.
+  - The brief's "IMF outlook" section: inflation, government debt, budget balance, current account
+    and unemployment for last year (estimate) and three projection years, from `imf.py`.
   - Measured on real data, no Groq: Kenya brief ~20 s, poverty profile ~8 s, "what works" ~5 s.
     Real-Groq token costs are estimates (fact sheets: brief ~1.3K tokens, profile ~0.6K, what works
     ~2.5K, plus the ~300-token prompt and the answer); not yet measured with a live call.
@@ -219,8 +222,8 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
 - `analyst.py` — the online tool-using agent (tool schemas, system prompt, loop).
 - `atlas.py` — Opportunity Atlas county data: profile, rank, correlate. `python atlas.py Cook IL`.
 - `worldbank.py` — World Bank WDI (+ growth forecasts from Global Economic Prospects, API
-  source 27, indicator `NYGDPMKTPKDZ`, labeled FORECAST with the edition date; IMF WEO not
-  used — API rejects Python clients and the DBnomics mirror stops at Apr 2025): keyword
+  source 27, indicator `NYGDPMKTPKDZ`, labeled FORECAST with the edition date; inflation, debt and
+  other forecasts come from `imf.py`): keyword
   search over the indicator catalog (BM25 + `CORE`
   boost + everyday-word `SYNONYMS`), country-name resolution (aliases, fuzzy), per-country
   stats or all-economy rankings, and convention `NOTES` attached to results (survey years
@@ -271,10 +274,22 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
   invented". Weak for common surnames with "et al." (almost always "exists"); strong for
   invented author combinations. Anonymous budget $0.10/day ≈ 100 searches; no billing on
   file, so never charged (429 when over); optional `OPENALEX_API_KEY` in `.env` = 10x.
-- **IMF not integrated (Oct 2026):** its DataMapper API returns every country regardless of
-  the requested one (~120KB/call) and answers `curl` but rejects Python `requests` (403/HTML);
-  not worked around (would mean disguising the client). Growth forecasts come from the World
-  Bank's Global Economic Prospects instead; inflation/debt forecasts remain a gap.
+- `imf.py` — IMF World Economic Outlook, `source="imf"` (Oct 7 2026). DataMapper's 15 WEO
+  indicators (inflation, government debt, budget balance, current account, unemployment, growth,
+  GDP and PPP levels, population), current edition named in its metadata ("World Economic
+  Outlook (April 2026)", projections to 2031). DataMapper ignores the country in the URL and
+  returns every country (~120KB), so each indicator is fetched once and cached in `data/imf/`
+  for a week. History: in early Oct 2026 DataMapper rejected Python `requests` (403/HTML) while
+  answering `curl`; on Oct 7 it answered plain `requests`, no workaround. Fallback if it refuses
+  again: the IMF data API (`api.imf.org`, SDMX, `IMF.RES,WEO`, no key, one request per country
+  list) — but on Oct 7 that still served the **October 2025** edition (series updated Sept 2025,
+  projections to 2030), so its results say "may be one edition older". Projections: from the
+  edition's year on (2025 is an estimate for many countries). Results carry `source`
+  "IMF, World Economic Outlook (...)", which charts and verify.py's source-tag rule recognize.
+  Cost: one sentence in the system prompt (~60 tokens per chat request); tool schemas unchanged
+  at 1,994 tokens (search_papers' description shortened to make room for the enum value).
+  Also in `compute.SOURCES` (run_python, data zips). Tests: `tests/test_imf.py` (live data +
+  a canned fallback reply). `python imf.py "government debt" Kenya`.
 - `verify.py` — fact-checks analyst answers (numbers + citations vs tool results).
 - `groq_client.py` — Groq API call + `GroqUnavailable`; `GROQ_MODEL` lives here.
 - `tests/test_tools.py` — tool + analyst-loop tests (fake Groq, zero tokens, ~3s). Run after

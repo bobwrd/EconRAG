@@ -34,8 +34,8 @@ won't change. This project wins on what they can't do reliably:
 | 0. Measure | Done. Baseline 27/30 on `main`; benchmark now 45 questions, re-run on `after-benchmark` pending |
 | 1. Core data | Done except Our World in Data series beyond Maddison |
 | 2. Computation | Done: `run_python` (sandboxed), `devecon.py`, automatic charts (no tokens) |
-| 3. Literature | Done: development library (15 papers), OpenAlex + citation checks, J-PAL's 1,318 evaluation summaries. 3ie not usable (no public API) |
-| 4. Long-run / subnational | Done: Maddison, Penn World Table 11.0, DHS surveys (with regions), Global Data Lab subnational HDI; other agencies deferred |
+| 3. Literature | Done: development library (15 papers), OpenAlex + citation checks, J-PAL's 1,318 evaluation summaries |
+| 4. Long-run / subnational | Done: Maddison, Penn World Table 11.0, DHS surveys (with regions), Global Data Lab subnational HDI |
 | 5. Workflows | Done: compare countries, country brief, poverty profile, "what works" (`workflows.py`, `report_recipes.py`, web Reports tab, PDF/Word/Markdown/LaTeX/BibTeX/data) |
 | 6. Interface | Done: local web UI (`web.py`) and a setup script for other people's own copies (`setup_assistant.py`) |
 
@@ -95,9 +95,10 @@ retrieval code), `get_data(source, series, countries, years)` → computed stats
 - [x] **Poverty & inequality**: WDI carries PIP's series. Current line verified from the API:
       **$3.00/day, 2021 PPP** (`SI.POV.DDAY`); results carry a survey-year caveat.
 - [x] **Forecasts**: World Bank Global Economic Prospects growth forecasts (June 2026 edition,
-      through 2028, 143 economies + regions), labeled FORECAST with the edition date. IMF WEO
-      still out: its API rejects Python clients and DBnomics' mirror is stale (Apr 2025). GEP
-      has growth only — inflation/debt forecasts remain a gap.
+      through 2028, 143 economies + regions), labeled FORECAST with the edition date. Plus the
+      **IMF World Economic Outlook** (`imf.py`, Oct 2026; April 2026 edition): inflation,
+      government debt and budget balance, current account, unemployment, growth, with projections
+      to 2031, as `source="imf"` in chat and an "IMF outlook" section in the country brief.
 - [~] **Our World in Data** (CSV downloads): used for Maddison GDP per capita (Phase 4);
       other curated series not added yet.
 - [x] **Country handling in code**: names, ISO codes, aliases ("Ivory Coast" → CIV,
@@ -161,9 +162,6 @@ retrieval code), `get_data(source, series, countries, years)` → computed stats
       country field) and results; returns researchers, countries, timeline, sample, and the
       first 160 words of "Results and policy lessons", which count as evidence for the
       fact-check. Cost: ~170 tokens per request (schema + prompt line).
-- [-] **3ie Development Evidence Portal**: not integrated. No public API — the site's data comes
-      from an internal GraphQL endpoint that expects a login token; not worked around (same
-      rule as the IMF).
 - [x] Embedding model upgraded to `bge-small-en-v1.5`: better candidates (reworded MRR
       .148 → .262) but no end-to-end gain after Laya's rerank (14/18 and 5-6/12 either way).
       The reranker was then the bottleneck: fusion constant 60 -> 10 lifted evidence in the
@@ -198,10 +196,6 @@ retrieval code), `get_data(source, series, countries, years)` → computed stats
       per worker 4.55%/yr = capital 2.50 + schooling 0.72 + TFP 1.34 (PWT's own TFP: 1.46).
       Note PWT and Maddison can disagree (Korea passes Ghana in 1975 in PWT's rgdpe, 1967 in
       Maddison); results name their source. Not yet in the benchmark.
-- [-] Deferred (Oct 2026): WHO GHO, UNESCO UIS, FAOSTAT, ILOSTAT, OECD CRS. WDI already
-      republishes most of their headline series (WHO health, UIS education, ILO modeled labor,
-      FAO agriculture, net aid received); each extra source adds tool text to every request.
-      Revisit if the benchmark shows a gap (most likely: aid flows by donor, OECD CRS).
 
 ## Phase 5: Workflows people repeat
 

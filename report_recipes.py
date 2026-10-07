@@ -49,6 +49,11 @@ HEALTH = ["SP.DYN.LE00.IN", "SH.DYN.MORT", "SH.STA.STNT.ZS"]
 EDUCATION = ["SE.LPV.PRIM", "SE.SEC.ENRR", "SE.ADT.LITR.ZS"]
 LINES = [("SI.POV.DDAY", "$3.00"), ("SI.POV.LMIC", "$4.20"), ("SI.POV.UMIC", "$8.30")]
 DHS_U5M = "CM_ECMR_C_U5M"
+IMF_OUTLOOK = {"PCPIPCH": "Inflation, average consumer prices (%)",
+               "GGXWDG_NGDP": "Government gross debt (% of GDP)",
+               "GGXCNL_NGDP": "Government budget balance (net lending/borrowing, % of GDP)",
+               "BCA_NGDPD": "Current account balance (% of GDP)",
+               "LUR": "Unemployment rate (%)"}
 
 SOURCES = {
     "gep": {"key": "worldbank_gep", "type": "misc", "author": "{World Bank}", "title": "Global Economic Prospects",
@@ -65,6 +70,8 @@ SOURCES = {
             "title": "Subnational Human Development Database v10.2", "url": "https://globaldatalab.org/shdi/"},
     "dhs": {"key": "dhs_statcompiler", "type": "misc", "author": "{The DHS Program}",
             "title": "STATcompiler indicator data", "url": "https://api.dhsprogram.com"},
+    "imf": {"key": "imf_weo", "type": "misc", "author": "{International Monetary Fund}",
+            "title": "World Economic Outlook database", "url": "https://www.imf.org/external/datamapper"},
     "jpal": {"key": "jpal_evaluations", "type": "misc", "author": "{J-PAL}",
              "title": "Evaluation summaries", "url": "https://www.povertyactionlab.org/evaluations"},
 }
@@ -79,7 +86,8 @@ WORKS_PROMPT = """You write the summary at the top of an evidence review of an i
 # ------------------------------------------------------------------ optional data
 _loaded: dict[str, object] = {}
 _missing: dict[str, str] = {}
-LOADERS = {"longrun": ("longrun", "LongRun"), "gdl": ("gdl", "GDL"), "dhs": ("dhs", "DHS"), "jpal": ("jpal", "JPAL")}
+LOADERS = {"longrun": ("longrun", "LongRun"), "gdl": ("gdl", "GDL"), "dhs": ("dhs", "DHS"), "jpal": ("jpal", "JPAL"),
+           "imf": ("imf", "IMF")}
 
 
 def load(name: str):
@@ -338,6 +346,7 @@ def country_brief(wb, country: str, emit=lambda *_: None, write: bool = True) ->
         sections.append(section("Growth", {"columns": cols, "rows": growth_rows}, growth_notes,
                                  results=growth_results))
 
+    sections.append(imf_outlook(wb, code, name, log, emit))
     sections.append(long_run(code, name, log, emit))
     peer_section("Poverty and inequality", POVERTY,
                  ["The poverty profile report shows every survey year, the $8.30 line and the number of poor."])
@@ -355,6 +364,42 @@ def country_brief(wb, country: str, emit=lambda *_: None, write: bool = True) ->
              "Research lists studies and papers about the country; the summary doesn't describe their findings."]
     emit("step", "Done")
     return finish("brief", f"{name}: country brief", {"country": name}, summary, sections, about, log, facts)
+
+
+def imf_outlook(wb, code: str, name: str, log, emit) -> dict:
+    """Inflation, debt, deficit, current account, unemployment: last year's estimate and the IMF's
+    projections for three years (the World Bank's GEP forecasts growth only)."""
+    heading = "IMF outlook"
+    imf_ = load("imf")
+    if imf_ is None:
+        return section(heading, notes=[f"IMF data couldn't be reached ({_missing.get('imf', '')[:80]})."])
+    emit("step", "IMF: World Economic Outlook")
+    rows, edition, years = [], "", []
+    for ind, label in IMF_OUTLOOK.items():
+        try:
+            result = imf_.get(ind, [code], name=lambda c: name)
+        except Exception as e:
+            emit("step", f"  skipped IMF {ind}: {e}")
+            continue
+        edition = result["edition"]
+        first = result["economies"][0].get("projections_from") or datetime.date.today().year
+        years = [first - 1, first, first + 1, first + 2]
+        series = dict(map(tuple, result["economies"][0].get("series [year, value]", [])))
+        if not series:
+            continue
+        cells = [f"{series[y]:.1f}" if y in series else "–" for y in years]
+        rows.append([label] + cells)
+        log.results.append(("get_data", {"source": "imf", "series": ind, "countries": [code]}, result))
+        log.facts.append({"indicator": f"{label}, IMF {edition}",
+                          "value": ", ".join(f"{y}: {c}" + (" (estimate)" if y == years[0] else " (projection)")
+                                             for y, c in zip(years, cells) if c != "–")})
+    if not rows:
+        return section(heading, notes=[f"No IMF World Economic Outlook data for {name}."])
+    log.sources["imf"] = {**SOURCES["imf"], "note": edition}
+    return section(heading, {"columns": ["Measure"] + [f"{y}{' (est.)' if i == 0 else ''}" for i, y in
+                                                      enumerate(years)], "rows": rows},
+                   [f"IMF {edition}: {years[1]} onward are projections and {years[0]} is an estimate for many "
+                    "countries. Revised every April and October."])
 
 
 def long_run(code: str, name: str, log, emit) -> dict:

@@ -36,6 +36,7 @@ import compute
 import groq_client
 import dhs
 import gdl
+import imf
 import jpal
 import longrun
 import worldbank
@@ -63,7 +64,7 @@ Answer from your tools, not from memory:
 - search_evaluations: J-PAL's summaries of ~1,100 randomized evaluations (mostly in developing countries) with their results. Use it with search_literature for "what works" / "does X work" questions; say where and when each study ran.
 - run_python: calculations the other tools don't do (growth needed to reach a target, projections, regressions, population-weighted averages, convergence). List the data in `data`; the script gets DATA[series][ISO3] = {{year: value}} (FRED under "US"), NAMES, devecon (cagr, doubling_time, weighted_mean, gini, fgt, beta_convergence, growth_decomposition), np, scipy.stats. print() every number you will cite, with a label.
 - county_profile / rank_counties / correlate_counties: the Opportunity Atlas (every US county). Use them for questions about specific places, comparisons between places, or which local characteristics go with mobility. For a city, use its main county (Chicago -> Cook County, IL) and say so.
-- search_data / get_data: source "worldbank" (default) = World Development Indicators, ~1,500 indicators for ~217 economies plus regions and income groups (e.g. "Sub-Saharan Africa", "Low income") — growth, poverty, inequality, health, education, labor, trade — plus World Bank GDP growth FORECASTS (search "growth forecast"). Present forecasts as forecasts, with the edition date the result gives. Use countries ["all"] to rank every economy. Source "fred" = US and high-frequency series (monthly unemployment, CPI); for inflation from a price index use units "pc1": the raw index is a level, not a rate. Source "longrun" = history before WDI: Maddison GDP per capita back to year 1 (mpd.gdppc, 2011 int$) and Penn World Table output, capital, schooling, TFP since 1950; 2+ countries also returns ratios, overtaking and divergence years; series pwt.growth_accounting splits growth per worker into capital, schooling and TFP. Source "dhs" = Demographic and Health Surveys, ~90 developing countries, one value per survey every ~5 years (child mortality, stunting, fertility, contraception, maternal care, vaccination, schooling, water, HIV, women's empowerment); regions true for subnational values; always state the survey year. Source "gdl" = Global Data Lab subnational HDI, life expectancy, schooling, GNI per capita (2021 PPP) for 1,805 regions in 188 countries, 1990-2023: every region of a country, or ["all"] to rank regions worldwide; metrics take f/m for female/male (lifexpf). Search first unless you know the exact id.
+- search_data / get_data: source "worldbank" (default) = World Development Indicators, ~1,500 indicators for ~217 economies plus regions and income groups (e.g. "Sub-Saharan Africa", "Low income") — growth, poverty, inequality, health, education, labor, trade — plus World Bank GDP growth FORECASTS (search "growth forecast"). Present forecasts as forecasts, with the edition date the result gives. Use countries ["all"] to rank every economy. Source "fred" = US and high-frequency series (monthly unemployment, CPI); for inflation from a price index use units "pc1": the raw index is a level, not a rate. Source "longrun" = history before WDI: Maddison GDP per capita back to year 1 (mpd.gdppc, 2011 int$) and Penn World Table output, capital, schooling, TFP since 1950; 2+ countries also returns ratios, overtaking and divergence years; series pwt.growth_accounting splits growth per worker into capital, schooling and TFP. Source "dhs" = Demographic and Health Surveys, ~90 developing countries, one value per survey every ~5 years (child mortality, stunting, fertility, contraception, maternal care, vaccination, schooling, water, HIV, women's empowerment); regions true for subnational values; always state the survey year. Source "gdl" = Global Data Lab subnational HDI, life expectancy, schooling, GNI per capita (2021 PPP) for 1,805 regions in 188 countries, 1990-2023: every region of a country, or ["all"] to rank regions worldwide; metrics take f/m for female/male (lifexpf). Source "imf" = IMF World Economic Outlook: inflation, government debt and budget balance, current account, unemployment, GDP growth, with PROJECTIONS ~5 years ahead; name the edition the result gives. Search first unless you know the exact id.
 
 Economics conventions:
 - "Employment rate" means the employment-population ratio (FRED EMRATIO), NOT 100 minus the unemployment rate (the unemployed are only those looking for work). Labor force participation is CIVPART.
@@ -92,7 +93,7 @@ Rules:
 _race = {"type": "string", "enum": list(RACES)}
 _gender = {"type": "string", "enum": list(GENDERS)}
 _state = {"type": "string", "description": "2-letter abbreviation; omit for all US"}
-_source = {"type": "string", "enum": ["worldbank", "fred", "longrun", "dhs", "gdl"], "description": "default worldbank"}
+_source = {"type": "string", "enum": ["worldbank", "fred", "longrun", "dhs", "gdl", "imf"], "description": "default worldbank"}
 _metric_doc = ("upward_mobility: avg adult income percentile of kids from 25th-percentile families; "
                "incarceration: % of them incarcerated in 2010. race/gender apply to these two only. "
                "Other metrics are county characteristics, mostly ~2010.")
@@ -105,8 +106,8 @@ def _tool(name: str, description: str, properties: dict, required: list[str]) ->
 
 
 TOOLS = [
-    _tool("search_papers", "Search the user's research paper library; returns the most relevant "
-          "passages labeled with source file.", {"query": {"type": "string"}}, ["query"]),
+    _tool("search_papers", "Search the user's paper library: most relevant passages, labeled with "
+          "source file.", {"query": {"type": "string"}}, ["query"]),
     _tool("search_literature", "Search published research (OpenAlex): real papers with abstracts.",
           {"query": {"type": "string"}, "from_year": {"type": "integer", "description": "optional"}}, ["query"]),
     _tool("search_evaluations", "Search J-PAL randomized evaluations.",
@@ -304,6 +305,7 @@ class Analyst:
         self._atlas = atlas  # loaded on first use when not given: the data files may be missing
         self.wb = wb or worldbank.WorldBank()
         self._longrun = None  # loaded on first use: most questions don't need it
+        self._imf = None
         self._jpal = None
         self._dhs = None
         self._chart_keys: set[str] = set()  # charts drawn for the previous question
@@ -388,6 +390,7 @@ class Analyst:
                            self.longrun().search(args["query"]) if source == "longrun" else
                            self.dhs().search(args["query"]) if source == "dhs" else
                            self.gdl().search(args["query"]) if source == "gdl" else
+                           self.imf().search(args["query"]) if source == "imf" else
                            self.wb.search(args["query"]))
                 if not results:
                     return {"results": [], "note": "No series matched. Try 2-3 plain keywords or the other "
@@ -408,6 +411,12 @@ class Analyst:
                     return _trim_regions(self.dhs().get(args["series"], args.get("countries") or [],
                                                         year(args.get("start")), year(args.get("end")),
                                                         bool(args.get("regions"))))
+                if args.get("source") == "imf":
+                    if not args.get("countries"):
+                        return {"error": "imf data needs `countries` (names or ISO3 codes)"}
+                    return self.imf().get(args["series"], args["countries"], year(args.get("start")),
+                                          year(args.get("end")), resolve=self.wb.country,
+                                          name=lambda c: self.wb.countries.get(c, {}).get("name", c))
                 if args.get("source") == "longrun":
                     return self._get_longrun(args["series"], args.get("countries") or [],
                                              year(args.get("start")), year(args.get("end")))
@@ -435,6 +444,11 @@ class Analyst:
         if self._dhs is None:
             self._dhs = dhs.DHS()
         return self._dhs
+
+    def imf(self) -> imf.IMF:
+        if self._imf is None:
+            self._imf = imf.IMF()  # network errors on the first catalog download reach the model
+        return self._imf
 
     def longrun(self) -> longrun.LongRun:
         if self._longrun is None:

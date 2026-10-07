@@ -127,7 +127,7 @@ def unsupported_numbers(answer: str, structured: str, passages: str) -> list[str
 
 
 # Data source tags the analyst is told to write: "(World Bank: SP.DYN.LE00.IN, 2024)"
-_SOURCE_TAG = re.compile(r"\((?:World Bank|FRED|Opportunity Atlas|Atlas|paper)\b[^)]*\)")
+_SOURCE_TAG = re.compile(r"\((?:World Bank|FRED|Opportunity Atlas|Atlas|paper|IMF)\b[^)]*\)")
 _US_STATES = ("Alabama Alaska Arizona Arkansas California Colorado Connecticut Delaware Florida Georgia "
               "Hawaii Idaho Illinois Indiana Iowa Kansas Kentucky Louisiana Maine Maryland Massachusetts "
               "Michigan Minnesota Mississippi Missouri Montana Nebraska Nevada Hampshire Jersey Mexico York "

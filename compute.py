@@ -31,7 +31,7 @@ CPU_SECONDS = 10
 MAX_OUTPUT = 3000   # characters of stdout returned to the model
 MAX_SPECS = 6
 MAX_POINTS = 20000  # data points across all specs (keeps the JSON handed over small)
-SOURCES = ("worldbank", "longrun", "gdl", "fred")
+SOURCES = ("worldbank", "longrun", "gdl", "fred", "imf")
 SANDBOX = """(version 1)
 (allow default)
 (deny network*)
@@ -96,6 +96,16 @@ def fetch(spec: dict, wb=None, longrun=None, gdl=None) -> tuple[dict[str, dict],
                     label = iso3 if key[1] == gdl.national_code.get(iso3) else f"{iso3}:{gdl.region_name[key[1]]}"
                     out[label] = s
                     names[label] = gdl.country_name[iso3] + ("" if label == iso3 else f": {gdl.region_name[key[1]]}")
+    elif source == "imf":
+        import imf
+        codes = [wb.country(c) for c in countries]
+        data, _ = imf.IMF().series(series, codes)
+        for code in codes:
+            s = {y: v for y, v in data.get(code, {}).items()
+                 if (year(start) is None or y >= year(start)) and (year(end) is None or y <= year(end))}
+            if s:
+                out[code] = s
+                names[code] = wb.countries.get(code, {}).get("name", code)
     else:  # fred: one US series, keyed by date
         import fred
         params = {"series_id": series, "units": spec.get("units") or "lin"}

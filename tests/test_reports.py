@@ -178,7 +178,7 @@ def _brief():
 def test_country_brief_tables_come_from_the_data():
     report, sent = _brief()
     headings = [s["heading"] for s in report["sections"]]
-    for h in ("Income", "Growth", "Long-run growth", "Poverty and inequality", "Health", "Education",
+    for h in ("Income", "Growth", "IMF outlook", "Long-run growth", "Poverty and inequality", "Health", "Education",
               "Differences within the country", "Research about the country"):
         assert h in headings, h
     income = report["sections"][0]
@@ -199,7 +199,7 @@ def test_country_brief_tables_come_from_the_data():
 
 def test_missing_data_switches_sections_off():
     saved, chunks = dict(rr._loaded), rr.CHUNKS
-    rr._loaded.update(longrun=None, gdl=None, dhs=None, jpal=None)
+    rr._loaded.update(longrun=None, gdl=None, dhs=None, jpal=None, imf=None)
     rr.CHUNKS = Path("no/such/chunks.json")
     try:
         report = rr.country_brief(tt.WB, "Ghana", write=False)

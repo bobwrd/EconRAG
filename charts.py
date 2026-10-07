@@ -219,7 +219,8 @@ def specs_for(name: str, args: dict, result: dict) -> list[dict]:
                     "title": result.get("title", result["series_id"]), "units": result.get("units", ""),
                     "source": f"FRED, {result['series_id']} (St. Louis Fed)"})
     elif "economies" in result:  # World Bank: one line per economy, a map when there are many
-        wb_source = f"World Bank, World Development Indicators ({result['indicator']})"
+        wb_source = (f"{source} ({result['indicator']})" if source.startswith("IMF") else
+                     f"World Bank, World Development Indicators ({result['indicator']})")
         # "series [year, value]" when short enough to send whole, "sampled ..." otherwise
         lines = {e["economy"]: _points(e, ("series", "sampled"), ("first", "latest", "max", "min"), "year")
                  for e in result["economies"] if "latest" in e}

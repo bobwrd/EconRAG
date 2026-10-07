@@ -71,6 +71,15 @@ def test_search_ranks_and_trims():
     assert lr.search("zzzz")["evaluations"] == []
 
 
+def test_search_drops_footer_and_ongoing_results():
+    footer = " J-PAL 400 Main Street E19-201 Cambridge, MA 02142 USA"
+    assert jpal.results_text({"results_and_policy_lessons": "Scores rose." + footer}) == "Scores rose."
+    lr = _fixture_jpal()
+    lr.evals[1]["results_and_policy_lessons"] = "Study ongoing; results forthcoming." + footer
+    r = lr.search("reading learning India")["evaluations"][0]
+    assert r["results"].startswith("no results reported yet"), r
+
+
 def test_analyst_tool_results_count_as_evidence():
     bot = analyst.Analyst(lambda q, seen: ("", [], []), atlas=object(), wb=object())
     bot._jpal = _fixture_jpal()

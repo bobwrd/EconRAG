@@ -29,6 +29,7 @@ import compute
 import openalex
 import verify
 import workflows
+from jpal import results_text
 from workflows import WDI_SOURCE, fmt, python_summary, write_summary  # noqa: F401  (python_summary: tests)
 
 MAX_STUDIES = 12        # J-PAL evaluations listed in "what works"
@@ -517,16 +518,6 @@ def subnational(name: str, log, emit) -> dict:
             notes.append(f"No DHS regional data for {name} ({type(e).__name__}: {str(e)[:80]}).")
     table = {"columns": ["Measure", "Value"], "rows": rows} if rows else None
     return section("Differences within the country", table, notes)
-
-
-_FOOTER = re.compile(r"\s*J-PAL 400 Main Street.*", re.S)
-
-
-def results_text(e: dict) -> str:
-    """J-PAL's results, without the site footer saved after them on most pages; "" while a study is
-    ongoing ("Study ongoing; results forthcoming.")."""
-    text = _FOOTER.sub("", e.get("results_and_policy_lessons", "")).strip()
-    return "" if "forthcoming" in text.lower() and len(text.split()) < 25 else text
 
 
 def researchers(e: dict) -> str:

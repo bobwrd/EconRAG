@@ -202,8 +202,8 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
     its loaded models (with Laya); the command line uses retrieval only (bge-small + BM25), since
     Laya needs ~1.7GB.
   - J-PAL's saved results text ends with the site footer ("J-PAL 400 Main Street ...") on 822 of
-    1,318 pages, and ongoing studies say only "results forthcoming": `results_text` cuts both. The
-    chat's `search_evaluations` tool (jpal.py) still shows the footer when a result is short.
+    1,318 pages, and ongoing studies say only "results forthcoming": `jpal.results_text` cuts both,
+    for reports and the chat's `search_evaluations` tool (its excerpts and keyword index).
   - The brief's "IMF outlook" section: inflation, government debt, budget balance, current account
     and unemployment for last year (estimate) and three projection years, from `imf.py`.
   - Measured on real data, no Groq: Kenya brief ~20 s, poverty profile ~8 s, "what works" ~5 s.

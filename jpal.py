@@ -37,6 +37,16 @@ NOTE = ("J-PAL evaluation summaries (randomized trials). Each covers one context
         "and don't generalize one study to 'what works' everywhere; cite as (J-PAL: <title>).")
 
 
+_FOOTER = re.compile(r"\s*J-PAL 400 Main Street.*", re.S)
+
+
+def results_text(e: dict) -> str:
+    """J-PAL's results, without the site footer saved after them on most pages; "" while a study is
+    ongoing ("Study ongoing; results forthcoming.")."""
+    text = _FOOTER.sub("", e.get("results_and_policy_lessons", "")).strip()
+    return "" if "forthcoming" in text.lower() and len(text.split()) < 25 else text
+
+
 def _text(fragment: str) -> str:
     fragment = re.sub(r"(?s)<(script|style|noscript).*?</\1>", "", fragment)
     return " ".join(html.unescape(re.sub(r"<[^>]+>", " ", fragment)).split())
@@ -142,7 +152,7 @@ class JPAL:
         self._bm25 = BM25([" ".join([e["title"]] * 2 + [e.get(k, "") for k in (
             "sectors", "intervention_type", "outcome_of_interest", "target_group", "policy_issue",
             " ".join(e["countries"]),
-            "context_of_the_evaluation", "results_and_policy_lessons")]) for e in self.evals])
+            "context_of_the_evaluation")] + [results_text(e)]) for e in self.evals])
 
     def search(self, query: str, n: int = 4) -> dict:
         scores = self._bm25.scores(query)
@@ -152,7 +162,7 @@ class JPAL:
             if scores[i] <= 0:
                 break
             e = self.evals[i]
-            results = e.get("results_and_policy_lessons", "").split()
+            results = results_text(e).split()
             hits.append({
                 "title": e["title"], "cite_as": f"J-PAL: {e['title']}",
                 "researchers": e.get("researchers", ""), "countries": e["countries"],

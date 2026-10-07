@@ -34,6 +34,7 @@ import charts
 import compute
 import groq_client
 import report_export
+import report_recipes
 import verify
 import workflows
 from groq_client import GroqUnavailable
@@ -292,6 +293,7 @@ class App:
         self.reports: dict[str, dict] = {}  # report id -> report (workflows.py), for downloads
         self.next_id = 1
         self._wb = None
+        self.library = None  # report_recipes.library_search(models), made on first use; False = no library
         self.warm = None  # ask.warm_up running between questions
 
     def store(self, record: dict, where: dict | None = None) -> str:
@@ -313,16 +315,29 @@ class App:
         return self._wb
 
     def report(self, params: dict, emit) -> dict:
-        """Builds a report (workflows.py) and returns it as the page shows it."""
-        if params.get("kind") != "compare":
+        """Builds a report (workflows.py, report_recipes.py) and returns it as the page shows it."""
+        kind = params.get("kind")
+        say = lambda kind, text: emit({"kind": kind, "text": text})  # noqa: E731
+        write = params.get("summary", True) is not False
+        text = lambda key: str(params.get(key) or "").strip()  # noqa: E731
+        if kind == "compare":
+            countries = params.get("countries") or []
+            if isinstance(countries, str):
+                countries = [c for c in re.split(r"[,;\n]+", countries) if c.strip()]
+            indicators = [i for i in params.get("indicators") or [] if str(i).strip()]
+            report = workflows.compare(self.wb(), countries, params.get("topics") or None, indicators,
+                                       emit=say, write=write)
+        elif kind == "brief":
+            report = report_recipes.country_brief(self.wb(), text("country"), emit=say, write=write)
+        elif kind == "poverty":
+            report = report_recipes.poverty_profile(self.wb(), text("country"), emit=say, write=write)
+        elif kind == "works":
+            if self.library is None:  # the chat's paper search (with Laya) when the models are loaded
+                self.library = report_recipes.library_search(self.models) if self.models else False
+            report = report_recipes.what_works(self.wb(), text("intervention"), text("region"), text("outcome"),
+                                               emit=say, write=write, library=self.library or None)
+        else:
             raise ValueError("unknown report kind")
-        countries = params.get("countries") or []
-        if isinstance(countries, str):
-            countries = [c for c in re.split(r"[,;\n]+", countries) if c.strip()]
-        indicators = [i for i in params.get("indicators") or [] if str(i).strip()]
-        report = workflows.compare(self.wb(), countries, params.get("topics") or None, indicators,
-                                   emit=lambda kind, text: emit({"kind": kind, "text": text}),
-                                   write=params.get("summary", True) is not False)
         rid = self.store(report, self.reports)
         return report_view(report, rid)
 
@@ -467,7 +482,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._ask(str(self._body().get("question") or "").strip()[:2000])
         if path == "/api/report":
             params = self._body()
-            return self._stream(lambda emit: self.app.report(params, emit), f"Report: {params.get('countries')}")
+            return self._stream(lambda emit: self.app.report(params, emit), f"Report: {params.get('kind')} "
+                                f"{params.get('countries') or params.get('country') or params.get('intervention')}")
         if path == "/api/technical":
             record = self.app.answers.get(str(self._body().get("id")))
             if not record or not record["evidence"]["results"]:

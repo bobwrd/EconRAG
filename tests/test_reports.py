@@ -19,8 +19,10 @@ sys.path.insert(0, str(ROOT / "tests"))
 import test_tools as tt  # noqa: E402  (sets cwd and sys.path; shares the fake Groq and the World Bank client)
 
 import charts  # noqa: E402
+import compute  # noqa: E402
 import groq_client  # noqa: E402
 import report_export  # noqa: E402
+import report_recipes as rr  # noqa: E402
 import workflows  # noqa: E402
 
 _cache = {}
@@ -152,6 +154,163 @@ def test_world_bank_charts_use_the_whole_series():
               "first": {"year": 2020, "value": 1}, "series [year, value]": [[2020, 1], [2021, 5], [2022, 2], [2024, 3]]}]}
     line = charts.specs_for("get_data", {}, result)[0]
     assert line["lines"]["A"] == [(2020, 1), (2021, 5), (2022, 2), (2024, 3)]
+
+
+# ------------------------------------------------------------------ brief, poverty profile, what works
+def _with_fake_model(script, build):
+    """build() with a scripted fake model; returns (report, requests sent)."""
+    original, key = workflows.groq_post, groq_client.GROQ_API_KEY
+    workflows.groq_post, sent = tt._fake_groq(script)
+    groq_client.GROQ_API_KEY = key or "test"
+    try:
+        return build(), sent
+    finally:
+        workflows.groq_post, groq_client.GROQ_API_KEY = original, key
+
+
+def _brief():
+    if "brief" not in _cache:
+        _cache["brief"] = _with_fake_model([{"content": "**Kenya** is a lower-middle-income country."}],
+                                           lambda: rr.country_brief(tt.WB, "Kenya"))
+    return _cache["brief"]
+
+
+def test_country_brief_tables_come_from_the_data():
+    report, sent = _brief()
+    headings = [s["heading"] for s in report["sections"]]
+    for h in ("Income", "Growth", "Long-run growth", "Poverty and inequality", "Health", "Education",
+              "Differences within the country", "Research about the country"):
+        assert h in headings, h
+    income = report["sections"][0]
+    assert income["table"]["columns"][1:4] == ["Kenya", "Lower middle income (aggregate)", "Sub-Saharan Africa (aggregate)"]
+    result = next(r for _, _, r in report["results"] if r.get("indicator") == "NY.GDP.PCAP.PP.CD")
+    kenya = next(e for e in result["economies"] if e["code"] == "KEN")["latest"]
+    assert income["table"]["rows"][0][1] == f"{workflows.fmt(kenya['value'])} ({kenya['year']})"
+    growth = next(s for s in report["sections"] if s["heading"] == "Growth")
+    assert growth["table"]["rows"][0][0].startswith("Average annual growth")
+    assert any("FORECAST" in r[0] for r in growth["table"]["rows"])
+    # comparisons with the groups are computed, not left to the model
+    ppp = next(f for f in report["facts"]["rows"] if f["indicator"].startswith("GDP per capita, PPP"))
+    assert ppp["vs Lower middle income"] in ("higher", "lower", "the same")
+    # one request, no tools, a small fact sheet
+    assert len(sent) == 1 and "tools" not in sent[0] and len(json.dumps(sent[0])) < 12000
+    assert report["summary"]["status"] == "ok"
+
+
+def test_missing_data_switches_sections_off():
+    saved, chunks = dict(rr._loaded), rr.CHUNKS
+    rr._loaded.update(longrun=None, gdl=None, dhs=None, jpal=None)
+    rr.CHUNKS = Path("no/such/chunks.json")
+    try:
+        report = rr.country_brief(tt.WB, "Ghana", write=False)
+        profile = rr.poverty_profile(tt.WB, "Ghana", write=False)
+        works = rr.what_works(tt.WB, "deworming", write=False, library=None)
+    finally:
+        rr._loaded.clear()
+        rr._loaded.update(saved)
+        rr.CHUNKS = chunks
+    off = {s["heading"]: " ".join(s["notes"]) for s in report["sections"] + profile["sections"] + works["sections"]
+           if not s["table"] and not s["items"]}
+    for heading in ("Long-run growth", "Differences within the country", "Research about the country",
+                    "Income by region", "Randomized evaluations (J-PAL)", "From the paper library"):
+        assert "not set up" in off[heading], heading
+    assert report["sections"][0]["table"]["rows"] and report["summary"]["status"] == "python"
+    for r in (report, profile, works):  # every format still builds
+        assert report_export.export(r, "pdf")[:5] == b"%PDF-" and report_export.markdown(r)
+
+
+def test_poverty_profile_computes_number_of_poor_and_survey_gaps():
+    report = rr.poverty_profile(tt.WB, "Kenya", write=False)
+    by_year = report["sections"][0]["table"]
+    rates, _ = compute.fetch({"series": "SI.POV.DDAY", "countries": ["KEN"], "start": 1960}, tt.WB)
+    pop, _ = compute.fetch({"series": "SP.POP.TOTL", "countries": ["KEN"], "start": 1960}, tt.WB)
+    year = max(rates["KEN"])
+    last = by_year["rows"][-1]
+    assert last[0] == str(year) and last[-1] == rr.people(rates["KEN"][year] * pop["KEN"][year] / 100)
+    timing = dict(report["sections"][1]["table"]["rows"])
+    surveys = sorted(rates["KEN"])
+    longest = max(b - a for a, b in zip(surveys, surveys[1:]))
+    assert timing["Longest gap between surveys"].startswith(f"{longest} years")
+    regions = next(s for s in report["sections"] if s["heading"] == "Income by region")
+    assert any("not a poverty rate" in n for n in regions["notes"])
+    assert any("poverty_lines_KEN" in c for c in report["sections"][0]["charts"]) or not charts.ask_available()
+    s = report["summary"]
+    assert s["status"] == "python" and workflows.verify.unsupported_numbers(s["text"], json.dumps(report["facts"]), "") == []
+
+
+REVIEWS = [{"cite_as": "Kabeer and Waddington (2015)", "title": "Economic impacts of conditional cash transfer programmes",
+            "authors": "Kabeer, Waddington", "year": 2015, "venue": "Journal of Development Effectiveness",
+            "cited_by": 157, "doi": "https://doi.org/10.1080/19439342.2015.1068833", "abstract": "Transfers raised income."}]
+
+
+def _works(script):
+    source = next(iter(rr.PAPERS))
+    library = lambda query, n: [{"source": source, "text": "Cash transfers raised consumption in the treated villages."}]
+    original = rr.openalex.search
+    rr.openalex.search = lambda query, n=5, from_year=None: REVIEWS
+    try:
+        return _with_fake_model(script, lambda: rr.what_works(tt.WB, "cash transfers", "Africa", library=library))
+    finally:
+        rr.openalex.search = original
+
+
+def test_what_works_groups_studies_and_quotes_results():
+    report, _ = _works([{"content": "Evidence is mixed (Kabeer and Waddington (2015))."}])
+    glance = next(s for s in report["sections"] if s["heading"] == "Evidence at a glance (J-PAL)")
+    studies = next(s for s in report["sections"] if s["heading"] == "The studies")["items"]
+    assert 0 < len(studies) <= rr.MAX_STUDIES and all(i["title"].startswith("J-PAL: ") for i in studies)
+    counts = [int(r[1]) if r[1].isdigit() else r[0].count(",") + 1 for r in glance["table"]["rows"]]
+    assert sum(counts) >= len(studies)  # a study counts once per outcome
+    assert not any("400 Main Street" in i["text"] for i in studies)  # J-PAL's site footer is cut off
+    assert all("quoted" in i["text"] or "No results" in i["text"] for i in studies)
+    regions = next(s for s in report["sections"] if s["heading"] == "Where the studies were done")["table"]["rows"]
+    assert all("Africa" in r[0] for r in regions)  # the region filter
+    facts = report["facts"]
+    assert len(facts["studies"]) <= rr.FACT_STUDIES and facts["reviews"][0]["cite_as"] == "Kabeer and Waddington (2015)"
+    assert len(json.dumps(facts)) < 12000  # stays well under Groq's 8K-token request limit
+    assert report["summary"]["status"] == "ok"
+    bib = report_export.export(report, "bib").decode()
+    assert "@article{oa_kabeer" in bib and "@misc{jpal_evaluations" in bib
+    text = report_export.markdown(report)
+    assert "- **[J-PAL: " in text and "Kabeer, Waddington" in text
+
+
+def test_what_works_citations_must_come_from_the_fact_sheet():
+    bad = "Transfers work (Smith and Jones (2019); J-PAL: An Invented Study)."
+    report, sent = _works([{"content": bad}, {"content": bad}])
+    assert len(sent) == 2 and "Smith and Jones" in sent[1]["messages"][-1]["content"]
+    s = report["summary"]
+    assert s["status"] == "unverified" and "J-PAL: An Invented Study" in s["unverified"]
+    assert any(u.startswith("Smith and Jones") for u in s["unverified"])
+    title = report["facts"]["studies"][0]["cite_as"]
+    good = f"One study found gains ({title}); a review agrees (Kabeer and Waddington (2015))."
+    assert rr.citations_outside(good, json.dumps(report["facts"], ensure_ascii=False, separators=(",", ":"))) == []
+
+
+def test_jpal_outcome_labels():
+    assert rr.outcome_labels("Earnings and income Employment") == ["Earnings and income", "Employment"]
+    assert rr.outcome_labels("Electoral participation Voter Behavior") == ["Electoral participation", "Voter Behavior"]
+    assert rr.outcome_labels("Corruption and Leakages") == ["Corruption and Leakages"]
+
+
+def test_web_runs_every_report_kind():
+    import test_web
+    report, _ = _report()
+    app, server = test_web._serve(tt._bot())
+    calls, saved = {}, (rr.country_brief, rr.poverty_profile, rr.what_works)
+    fake = lambda name: lambda *a, **k: (calls.update({name: (a[1:], k["write"])}), report)[1]  # noqa: E731
+    rr.country_brief, rr.poverty_profile, rr.what_works = fake("brief"), fake("poverty"), fake("works")
+    app.library = False  # no models in this test server
+    try:
+        for body in ({"kind": "brief", "country": "Kenya"}, {"kind": "poverty", "country": "Kenya", "summary": False},
+                     {"kind": "works", "intervention": "deworming", "region": "Kenya", "outcome": ""}):
+            status, out = test_web._request(app, "POST", "/api/report", body)
+            assert status == 200 and json.loads(out.decode().splitlines()[-1])["kind"] == "done"
+        assert calls["brief"] == (("Kenya",), True) and calls["poverty"] == (("Kenya",), False)
+        assert calls["works"][0] == ("deworming", "Kenya", "")
+    finally:
+        rr.country_brief, rr.poverty_profile, rr.what_works = saved
+        server.shutdown()
 
 
 if __name__ == "__main__":

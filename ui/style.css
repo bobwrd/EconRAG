@@ -207,4 +207,7 @@ td.num { text-align: right; font-variant-numeric: tabular-nums; }
 .downloads { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 14px; }
 .downloads .button { font-size: 0.82rem; padding: 5px 11px; }
 .notes { font-size: 0.86rem; color: var(--muted); padding-left: 1.2em; margin: 4px 0; }
+.items { font-size: 0.9rem; padding-left: 1.2em; margin: 6px 0; }
+.items li { margin: 0 0 8px; line-height: 1.45; }
+.items a, .report p.muted a { color: var(--accent); }
 .report-form label.check { display: flex; gap: 8px; align-items: baseline; font-weight: 400; flex-wrap: wrap; }

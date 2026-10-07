@@ -44,6 +44,19 @@ def images(section: dict) -> list[Path]:
     return [Path(p) for p in section.get("charts", []) if Path(p).suffix in IMAGE_TYPES and Path(p).exists()]
 
 
+def align(table: dict) -> list[str]:
+    """Column alignment, "l" or "r": a table may set its own (text columns); default numbers right."""
+    return table.get("align") or ["l"] + ["r"] * (len(table["columns"]) - 1)
+
+
+def source_text(s: dict) -> str:
+    """One line per source, the same in every format."""
+    parts = [s["author"].strip("{}").replace(" and ", ", ") if s.get("author") else "",
+             s.get("title", ""), s.get("journal", ""), s.get("year", "") if not s.get("accessed") else "",
+             s.get("url", ""), f"accessed {s['accessed']}" if s.get("accessed") else "", s.get("note", "")]
+    return ". ".join(p for p in parts if p) + "."
+
+
 def summary_status(report: dict) -> str:
     s = report["summary"]
     if s["status"] == "ok":
@@ -77,16 +90,19 @@ def markdown(report: dict, image_dir: str = "charts") -> str:
     out += [f"> {summary_status(report)}", ""]
     for sec in report["sections"]:
         out += [f"## {sec['heading']}", ""]
-        cols = sec["table"]["columns"]
-        out += ["| " + " | ".join(cols) + " |", "|" + "|".join(["---"] + ["---:"] * (len(cols) - 1)) + "|"]
-        out += ["| " + " | ".join(str(c) for c in row) + " |" for row in sec["table"]["rows"]]
-        out.append("")
+        if sec.get("table"):
+            cols = sec["table"]["columns"]
+            out += ["| " + " | ".join(cols) + " |", "|" + "|".join("---:" if a == "r" else "---"
+                                                                    for a in align(sec["table"])) + "|"]
+            out += ["| " + " | ".join(str(c).replace("|", "/") for c in row) + " |" for row in sec["table"]["rows"]]
+            out.append("")
+        out += [f"- **[{i['title']}]({i['url']})** — {i['text']}" if i.get("url") else f"- **{i['title']}** — {i['text']}"
+                for i in sec.get("items", [])] + ([""] if sec.get("items") else [])
         out += [f"- {n}" for n in sec["notes"]] + ([""] if sec["notes"] else [])
         out += [f"![{Path(p).stem}]({image_dir}/{Path(p).name})" for p in sec.get("charts", [])]
         out.append("")
     out += ["## About this report", ""] + [f"- {a}" for a in report["about"]] + [""]
-    out += ["## Sources", ""] + [f"- {s['author'].strip('{}')}, *{s['title']}*, {s['url']} "
-                                 f"(accessed {s.get('accessed', '')}). {s.get('note', '')}" for s in report["sources"]]
+    out += ["## Sources", ""] + [f"- {source_text(s)}" for s in report["sources"]]
     return "\n".join(out) + "\n"
 
 
@@ -124,12 +140,19 @@ def latex(report: dict, image_dir: str = "figures") -> str:
             out.append(r"\end{itemize}")
     out += [rf"\noindent\emph{{{tex(summary_status(report))}}}", ""]
     for sec in report["sections"]:
-        cols = sec["table"]["columns"]
-        out += [rf"\section*{{{tex(sec['heading'])}}}", r"\begin{table}[h]\centering\small",
-                r"\resizebox{\textwidth}{!}{%", r"\begin{tabular}{p{6cm}" + "r" * (len(cols) - 1) + "}", r"\toprule",
-                " & ".join(tex(c) for c in cols) + r" \\", r"\midrule"]
-        out += [" & ".join(tex(c) for c in row) + r" \\" for row in sec["table"]["rows"]]
-        out += [r"\bottomrule", r"\end{tabular}}", r"\end{table}"]
+        out.append(rf"\section*{{{tex(sec['heading'])}}}")
+        if sec.get("table"):
+            cols = sec["table"]["columns"]
+            out += [r"\begin{table}[h]\centering\small",
+                    r"\resizebox{\textwidth}{!}{%",
+                    r"\begin{tabular}{p{6cm}" + "".join(a if a == "r" else "p{4cm}" for a in align(sec["table"])[1:]) + "}",
+                    r"\toprule", " & ".join(tex(c) for c in cols) + r" \\", r"\midrule"]
+            out += [" & ".join(tex(c) for c in row) + r" \\" for row in sec["table"]["rows"]]
+            out += [r"\bottomrule", r"\end{tabular}}", r"\end{table}"]
+        if sec.get("items"):
+            out += [r"\begin{itemize}"] + [
+                rf"\item \textbf{{{tex(i['title'])}}} --- {tex(i['text'])}"
+                + (rf" \url{{{i['url']}}}" if i.get("url") else "") for i in sec["items"]] + [r"\end{itemize}"]
         if sec["notes"]:
             out += [r"\begin{itemize}\small"] + [rf"\item {tex(n)}" for n in sec["notes"]] + [r"\end{itemize}"]
         for p in images(sec):
@@ -161,7 +184,9 @@ def pdf(report: dict) -> bytes:
     doc.set_auto_page_break(True, margin=18)
     doc.set_margins(18, 18, 18)
     font = _pdf_font(doc)
-    safe = (lambda s: str(s)) if font == "body" else (lambda s: str(s).encode("latin-1", "replace").decode("latin-1"))
+    dashes = str.maketrans({"\u2010": "-", "\u2011": "-", "\u2012": "-"})  # hyphens Arial lacks
+    safe = (lambda s: str(s).translate(dashes)) if font == "body" else \
+        (lambda s: str(s).translate(dashes).encode("latin-1", "replace").decode("latin-1"))
     doc.add_page()
     width = doc.epw
 
@@ -184,17 +209,20 @@ def pdf(report: dict) -> bytes:
     para(summary_status(report), 9, "I", 4)
     for sec in report["sections"]:
         para(sec["heading"], 13, "B", 1)
-        cols = sec["table"]["columns"]
-        first = min(70, width * 0.4)
-        doc.set_font(font, "", 8.5)
-        with doc.table(col_widths=[first] + [(width - first) / (len(cols) - 1)] * (len(cols) - 1),
-                       text_align=["LEFT"] + ["RIGHT"] * (len(cols) - 1), line_height=4.5,
-                       headings_style=FontFace(emphasis="BOLD"), borders_layout="HORIZONTAL_LINES") as table:
-            for row in [cols] + sec["table"]["rows"]:
-                r = table.row()
-                for c in row:
-                    r.cell(safe(c))
-        doc.ln(2)
+        if sec.get("table"):
+            cols = sec["table"]["columns"]
+            first = min(70, width * 0.4)
+            doc.set_font(font, "", 8.5)
+            with doc.table(col_widths=[first] + [(width - first) / (len(cols) - 1)] * (len(cols) - 1),
+                           text_align=["RIGHT" if a == "r" else "LEFT" for a in align(sec["table"])], line_height=4.5,
+                           headings_style=FontFace(emphasis="BOLD"), borders_layout="HORIZONTAL_LINES") as table:
+                for row in [cols] + sec["table"]["rows"]:
+                    r = table.row()
+                    for c in row:
+                        r.cell(safe(c))
+            doc.ln(2)
+        for i in sec.get("items", []):
+            para(f"**{i['title']}** — {i['text']}" + (f" {i['url']}" if i.get("url") else ""), 9, "", 1.5, bullet=True)
         for n in sec["notes"]:
             para(n, 8.5, "", 1, bullet=True)
         for p in images(sec):
@@ -211,8 +239,7 @@ def pdf(report: dict) -> bytes:
         para(a, 9, "", 1, bullet=True)
     para("Sources", 13, "B", 1)
     for s in report["sources"]:
-        para(f"{s['author'].strip('{}')}, {s['title']}, {s['url']} (accessed {s.get('accessed', '')}). "
-             f"{s.get('note', '')}", 9, "", 1)
+        para(source_text(s), 9, "", 1)
     return bytes(doc.output())
 
 
@@ -238,6 +265,14 @@ def docx(report: dict) -> bytes:
     doc.add_paragraph().add_run(summary_status(report)).italic = True
     for sec in report["sections"]:
         doc.add_heading(sec["heading"], 1)
+        for i in sec.get("items", []):
+            item = doc.add_paragraph(style="List Bullet")
+            item.add_run(i["title"]).bold = True
+            item.add_run(f" — {i['text']}" + (f" {i['url']}" if i.get("url") else ""))
+        if not sec.get("table"):
+            for n in sec["notes"]:
+                doc.add_paragraph(n, style="List Bullet").runs[0].font.size = Pt(9)
+            continue
         cols, rows = sec["table"]["columns"], sec["table"]["rows"]
         table = doc.add_table(rows=1 + len(rows), cols=len(cols))
         table.style = "Light List Accent 1"
@@ -251,7 +286,7 @@ def docx(report: dict) -> bytes:
                 para = cell.paragraphs[0]
                 para.runs[0].font.size = Pt(9)
                 para.runs[0].bold = i == 0
-                if j:
+                if align(sec["table"])[j] == "r":
                     para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         for n in sec["notes"]:
             doc.add_paragraph(n, style="List Bullet").runs[0].font.size = Pt(9)
@@ -262,8 +297,7 @@ def docx(report: dict) -> bytes:
         doc.add_paragraph(a, style="List Bullet")
     doc.add_heading("Sources", 1)
     for s in report["sources"]:
-        doc.add_paragraph(f"{s['author'].strip('{}')}, {s['title']}, {s['url']} (accessed {s.get('accessed', '')}). "
-                          f"{s.get('note', '')}")
+        doc.add_paragraph(source_text(s))
     buf = io.BytesIO()
     doc.save(buf)
     return buf.getvalue()
@@ -287,9 +321,10 @@ def _charts(report: dict, folder: str, kinds: set[str] | None = None) -> dict[st
 
 
 def data_zip(report: dict, wb) -> bytes:
+    import report_recipes
     import web  # the chat's data download, reused: full series + what was fetched
     record = {"question": report["title"], "asked": report["created"], "evidence": {"results": report["results"]}}
-    return web.data_zip(record, "both", wb)
+    return web.data_zip(record, "both", wb, report_recipes._loaded.get("longrun"), report_recipes._loaded.get("gdl"))
 
 
 FORMATS = {  # name -> (file name, media type)

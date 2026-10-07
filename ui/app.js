@@ -375,26 +375,56 @@ function renderReport(card, r) {
   h += `<div class="bar">${badgeHtml}</div>`;
   if (s.text) h += `<div class="md r-summary">${markdown(s.text)}</div>`;
   for (const sec of r.sections) {
-    h += `<section class="r-section"><h3>${esc(sec.heading)}</h3>${tableHtml(sec.table)}`;
+    h += `<section class="r-section"><h3>${esc(sec.heading)}</h3>${sec.table ? tableHtml(sec.table) : ""}`;
+    if (sec.items && sec.items.length) h += '<ul class="items">' + sec.items.map(i => "<li><strong>" +
+      (i.url ? `<a href="${esc(i.url)}" target="_blank" rel="noopener">${esc(i.title)}</a>` : esc(i.title)) +
+      `</strong> — ${esc(i.text)}</li>`).join("") + "</ul>";
     if (sec.notes.length) h += "<ul class=\"notes\">" + sec.notes.map(n => `<li>${esc(n)}</li>`).join("") + "</ul>";
     if (sec.charts.length) h += '<div class="charts">' + sec.charts.map(c =>
       `<a href="${c}" target="_blank" rel="noopener"><img src="${c}" alt="Chart for ${esc(sec.heading)}" loading="lazy"></a>`).join("") + "</div>";
     h += "</section>";
   }
   h += "<h3>About this report</h3><ul class=\"notes\">" + r.about.map(a => `<li>${esc(a)}</li>`).join("") + "</ul>";
-  h += "<h3>Sources</h3>" + r.sources.map(src => `<p class="muted">${esc(src.author.replace(/[{}]/g, ""))}, ` +
-    `<em>${esc(src.title)}</em> (accessed ${esc(src.accessed || "")}). ${esc(src.note || "")}</p>`).join("");
+  h += "<h3>Sources</h3>" + r.sources.map(src => `<p class="muted">${esc((src.author || "").replace(/[{}]/g, "").replace(/ and /g, ", "))}. ` +
+    `<em>${esc(src.title)}</em>${src.journal ? ". " + esc(src.journal) : ""}${src.year && !src.accessed ? ", " + esc(src.year) : ""}. ` +
+    (src.url ? `<a href="${esc(src.url)}" target="_blank" rel="noopener">${esc(src.url)}</a>` : "") +
+    `${src.accessed ? " (accessed " + esc(src.accessed) + ")" : ""}. ${esc(src.note || "")}</p>`).join("");
   card.innerHTML = h;
   const summary = $(".r-summary", card);
   if (summary) highlightTerms(summary);
 }
 
+const REPORT_COST = {compare: "~2–5K", brief: "~3–5K", poverty: "~2–4K", works: "~4–6K"};
+
+function reportKind() {
+  return document.querySelector("input[name=r-kind]:checked").value;
+}
+
+function showReportKind() {
+  const kind = reportKind();
+  for (const el of document.querySelectorAll("#report-form [data-kind]")) el.hidden = !el.dataset.kind.split(" ").includes(kind);
+  $("#r-cost").textContent = `(${REPORT_COST[kind]} Groq tokens, up to twice that if the fact-check asks for a fix; ` +
+    "unticked: Python lists the highlights, free)";
+  try { localStorage.setItem("reportKind", kind); } catch (e) { /* private window */ }
+}
+
+function reportBody() {
+  const kind = reportKind(), summary = $("#r-summary").checked;
+  if (kind === "compare") {
+    const topics = [...document.querySelectorAll("#r-topics input:checked")].map(i => i.value);
+    return {kind, countries: $("#r-countries").value, topics, summary,
+      indicators: $("#r-indicators").value.split(",").map(x => x.trim()).filter(Boolean)};
+  }
+  if (kind === "works") return {kind, intervention: $("#r-intervention").value, region: $("#r-region").value,
+    outcome: $("#r-outcome").value, summary};
+  return {kind, country: $("#r-country").value, summary};
+}
+
 async function makeReport() {
   if (busy) return;
-  const topics = [...document.querySelectorAll("#r-topics input:checked")].map(i => i.value);
-  const body = {kind: "compare", countries: $("#r-countries").value,
-    topics, indicators: $("#r-indicators").value.split(",").map(x => x.trim()).filter(Boolean),
-    summary: $("#r-summary").checked};
+  const body = reportBody();
+  const needed = {compare: "countries", brief: "country", poverty: "country", works: "intervention"}[body.kind];
+  if (!String(body[needed] || "").trim()) { alert(`Please enter the ${needed}.`); return; }
   busy = true;
   $("#r-make").disabled = true;
   const card = document.createElement("article");
@@ -490,6 +520,13 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   document.querySelectorAll(".modes button").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
   $("#report-form").addEventListener("submit", e => { e.preventDefault(); makeReport(); });
+  document.querySelectorAll("input[name=r-kind]").forEach(i => i.addEventListener("change", showReportKind));
+  try {
+    const saved = localStorage.getItem("reportKind");
+    const input = saved && document.querySelector(`input[name=r-kind][value=${saved}]`);
+    if (input) input.checked = true;
+  } catch (e) { /* private window */ }
+  showReportKind();
   let mode = "chat";
   try { mode = localStorage.getItem("mode") || "chat"; } catch (e) { /* private window */ }
   setMode(mode);

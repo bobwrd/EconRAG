@@ -10,9 +10,9 @@ the tool results. Offline (or if Groq fails), the original local pipeline answer
 No paid API: FRED and Groq's free tier are the only network calls.
 
 **Direction (Oct 2026):** development economics for a general audience — see `ROADMAP.md` for
-the phased plan. As of Oct 7: Phases 0-4 and 6 done (local web UI `web.py`, setup script
-`setup_assistant.py` for other people's own copies); Phase 5 (reports, `workflows.py`) has its
-engine and "Compare countries"; next: country brief, poverty profile, "what works". Benchmark:
+the phased plan. As of Oct 7: every phase is built — local web UI `web.py`, setup script
+`setup_assistant.py` for other people's own copies, and four reports (`workflows.py`,
+`report_recipes.py`): compare countries, country brief, poverty profile, "what works". Benchmark:
 27/30 on Oct 6 (main); the fixes since and the 45-question version haven't been re-measured (the
 user tested by hand instead). A general chatbot's answers to the same benchmark are kept locally
 in `eval/external/` (2/25 strict, ~6/25 lenient; mostly stale numbers and the old $2.15 poverty
@@ -71,9 +71,9 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
   negligible cost). Weighting dense 2x helped neither set. Neither
   embedding model is strong alone — paraphrase stays hard. Online it matters less: the
   analyst writes its own search queries in the field's vocabulary. Embeddings live in one file per model,
-  `data/embeddings_<model>.npy` (`ask.embeddings_path`), so the Phase 1 commit (which reads
-  the old single `data/embeddings.npy`, MiniLM) and current code both work from one `data/`;
-  `--model <name>` evaluates any model (computed once).
+  `data/embeddings_<model>.npy` (`ask.embeddings_path`); `--model <name>` evaluates any model
+  (computed once). The MiniLM files were deleted Oct 7 2026, so checking out the Phase 1 commit
+  (which reads `data/embeddings.npy`) needs `ingest.py` re-run there first.
 - **Reranking**: Laya (`convaiinnovations/laya`, local, ~421M params) scores each candidate
   chunk with a `score` question (0-3 ordinal relevance) against `"Query: ... \n\nPassage: ..."`.
   Runs via `predict_batch` (one shared forward pass, not N sequential calls).
@@ -171,6 +171,41 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
   Found while building it: World Bank and long-run line charts (chat too) drew only first/max/min/
   latest when a series was short enough to be labeled "series" rather than "sampled" — fixed in
   `charts._points`. Tests: `tests/test_reports.py`.
+- `report_recipes.py` — the other three reports, same engine (`workflows.write_summary`, now with an
+  optional citation check; exports unchanged apart from sections that are a list of links instead
+  of a table, column alignment for text columns, and paper sources in the BibTeX):
+  - `country_brief`: income, growth, poverty, health, education as country | income-group
+    aggregate | region aggregate | rank in income group (one `get_data` call per indicator gives
+    both table and chart); "higher/lower than" each group is computed for the fact sheet. Plus a
+    10-year average growth row, GEP forecasts (GDP, not per person; the edition year minus one
+    is labeled "estimate"), Maddison since 1950 and PWT growth accounting, GDL HDI and DHS under-5
+    mortality by region, and research: J-PAL evaluations naming the country (most recent with
+    results) and library papers that name it 3+ times (a word count, no models needed). The
+    research is listed, not summarized, so the brief's summary has no citations to check.
+  - `poverty_profile`: every survey year (latest 12) at $3.00/$4.20/$8.30, gap, Gini, and people
+    below $3.00 = rate x population that year; survey timing (longest and average gap, years since
+    the latest); peers; GDL income per person by region, **labeled as not a poverty rate** (no free
+    source here gives poverty by region). Chart: one line per poverty line, from a result built in
+    Python (`poverty_lines_<ISO3>`).
+  - `what_works`: J-PAL BM25 over intervention + outcome, matches >= 40% of the best score, then
+    region (World Bank region by any part of its name, or a country) and outcome-word filters; 12
+    listed, the 8 best with results in the fact sheet (60-word excerpts). Outcomes parsed from
+    J-PAL's run-together label field (`outcome_labels`: split before capitals, rejoin "Voter
+    Behavior" etc.). Studies that disagree are quoted side by side, never labeled or averaged
+    (user's choice). One OpenAlex search ("<intervention> systematic review meta-analysis", top 5)
+    and 3 library passages. `citations_outside` flags author-year citations and "(J-PAL: title)"
+    titles not in the fact sheet, so no OpenAlex citation lookups are needed. Fact sheet ~9K
+    characters (~2.5K tokens).
+  - Optional data loads once per process (`load`); missing or broken data switches the section off
+    with "not set up on this computer (see setup_assistant.py)". Library passages: web.py reuses
+    its loaded models (with Laya); the command line uses retrieval only (bge-small + BM25), since
+    Laya needs ~1.7GB.
+  - J-PAL's saved results text ends with the site footer ("J-PAL 400 Main Street ...") on 822 of
+    1,318 pages, and ongoing studies say only "results forthcoming": `results_text` cuts both. The
+    chat's `search_evaluations` tool (jpal.py) still shows the footer when a result is short.
+  - Measured on real data, no Groq: Kenya brief ~20 s, poverty profile ~8 s, "what works" ~5 s.
+    Real-Groq token costs are estimates (fact sheets: brief ~1.3K tokens, profile ~0.6K, what works
+    ~2.5K, plus the ~300-token prompt and the answer); not yet measured with a live call.
 - `setup_assistant.py` — sets up another person's own copy (standard library only, runs before
   anything is installed): `python3 setup_assistant.py` reports each step, `install [step]` does
   them, asking before every download with source and size. Paper PDFs come from the `url` in
@@ -255,7 +290,7 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
 - `.env` — `FRED_API_KEY`, `GROQ_API_KEY` (optional; without it everything runs locally),
   `TYPESAFE_API_KEY` (unused so far). Gitignored.
 - `data/chunks.json`, `data/embeddings_<model>.npy` — generated, don't hand-edit, regenerate
-  via `ingest.py`. `data/embeddings.npy` (MiniLM) is only for checking out the `phase1` tag.
+  via `ingest.py`. (The old MiniLM `data/embeddings.npy` was deleted Oct 7 2026.)
 - `eval/reworded_questions.json` — 12 paraphrases of eval questions in everyday words, for
   `retrieval_eval.py --reworded` (where keyword search can't help).
 - `eval/questions.json` — 23 questions with expected facts, each checked against the paper
@@ -349,8 +384,9 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
    of passages per paper search (`AGENT_PAPERS_CTX`) with already-shown chunks skipped,
    `_fit()` trimming old tool results under `REQUEST_TOKEN_LIMIT`. A paper search sharing >= 60% of its keywords with an earlier one in the same question returns a one-line "already searched" note instead of passages (`_repeated_query`; one real question spent ~28K tokens on 5 rewordings, this catches the 2 closest). Rate limits (Oct 2026): a
    per-minute 429 asking for <=10s is waited out on Groq; anything longer, the daily cap, or an
-   outage sends requests to OpenRouter (`groq_client.BACKUP_AFTER_WAIT`; free Nemotron model
-   by default, verified to accept our tools and parameters) until Groq's limit clears — waiting
+   outage sends requests to OpenRouter (`groq_client.BACKUP_AFTER_WAIT`; the code's default
+   `OPENROUTER_MODEL` is gpt-oss-120b, and this machine's `.env` sets a free Nemotron model, verified
+   to accept our tools and parameters) until Groq's limit clears — waiting
    it out made one follow-up take ~4 minutes and run out of tool rounds.
    Follow-ups: numbers and citations in the last two answers count as evidence for verify.py
    (re-flagging them once sent the model into re-fetching and repeating its previous table). Groq's paid Dev tier lifts this.

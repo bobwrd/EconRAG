@@ -16,6 +16,12 @@ same happens without a Groq key or when Groq is down.
     .venv/bin/python workflows.py compare Kenya Ghana Nigeria
     .venv/bin/python workflows.py compare India China --topics income,growth,health
     .venv/bin/python workflows.py compare Peru Chile --indicators "female labor force"
+    .venv/bin/python workflows.py brief Kenya
+    .venv/bin/python workflows.py poverty India --no-summary
+    .venv/bin/python workflows.py works cash transfers --region Africa --outcome "mental health"
+
+Compare is here; the brief, poverty profile and "what works" recipes are in
+report_recipes.py.
 
 Files land in reports/<date>_<name>/ (gitignored). The web UI (web.py) runs the
 same recipes from its Reports tab.
@@ -84,9 +90,10 @@ def slug(text: str) -> str:
 
 
 # ------------------------------------------------------------------ the model's part
-def write_summary(facts: dict, prompt: str, emit=lambda *_: None) -> dict:
+def write_summary(facts: dict, prompt: str, emit=lambda *_: None, check=None) -> dict:
     """One request (two if the fact-check fails). Never raises: without Groq the
-    report simply has no summary."""
+    report simply has no summary. check(text, facts_text) -> extra problems
+    (citations not in the fact sheet), on top of the number check."""
     facts_text = json.dumps(facts, ensure_ascii=False, separators=(",", ":"))
     messages = [{"role": "system", "content": prompt}, {"role": "user", "content": facts_text}]
     tokens = 0
@@ -100,11 +107,15 @@ def write_summary(facts: dict, prompt: str, emit=lambda *_: None) -> dict:
             tokens += response.get("usage", {}).get("total_tokens", 0)
             text = (response["choices"][0]["message"].get("content") or "").strip()
             unverified = verify.unsupported_numbers(text, facts_text, "")
-            if not unverified:
+            cited = check(text, facts_text) if check else []
+            if not unverified and not cited:
                 break
+            problems = ([f"These numbers are not in the facts: {unverified}."] if unverified else []) + \
+                ([f"These citations are not in the facts: {cited}."] if cited else [])
             messages += [{"role": "assistant", "content": text}, {"role": "user", "content": (
-                f"These numbers are not in the facts: {unverified}. Rewrite the summary without them "
-                "(use only numbers from the facts). Don't mention this check.")}]
+                " ".join(problems) + " Rewrite the summary without them (use only numbers and sources from "
+                "the facts). Don't mention this check.")}]
+            unverified = unverified + cited
     except GroqUnavailable as e:
         return {"text": "", "status": "unavailable", "reason": str(e)[:200], "unverified": [], "tokens": tokens}
     return {"text": text, "status": "unverified" if unverified else "ok", "unverified": unverified,
@@ -282,16 +293,34 @@ def main(argv: list[str]) -> int:
     p.add_argument("countries", nargs="+")
     p.add_argument("--topics", help=f"comma-separated, default {','.join(DEFAULT_TOPICS)}")
     p.add_argument("--indicators", action="append", help="extra indicator: id or a few words (repeatable)")
-    p.add_argument("--out", default=str(REPORTS_DIR))
-    p.add_argument("--no-summary", action="store_true", help="summary written by Python: no Groq tokens")
+    for name, text in (("brief", "country brief: growth, income, poverty, health, education vs peers, research"),
+                       ("poverty", "poverty profile: every survey year, number of poor, survey gaps, regions")):
+        q = sub.add_parser(name, help=text)
+        q.add_argument("country")
+    q = sub.add_parser("works", help="'what works' review: J-PAL evaluations, OpenAlex reviews, library passages")
+    q.add_argument("intervention", nargs="+")
+    q.add_argument("--region", default="", help="a World Bank region (any part of its name) or a country")
+    q.add_argument("--outcome", default="", help="e.g. 'student learning'")
+    for q in sub.choices.values():
+        q.add_argument("--out", default=str(REPORTS_DIR))
+        q.add_argument("--no-summary", action="store_true", help="summary written by Python: no Groq tokens")
     args = parser.parse_args(argv)
 
     import report_export
+    import report_recipes
     from worldbank import WorldBank
     wb = WorldBank()
-    report = compare(wb, args.countries, args.topics.split(",") if args.topics else None,
-                     args.indicators, emit=lambda kind, text: print(f"  {text}", flush=True),
-                     write=not args.no_summary)
+    say = lambda kind, text: print(f"  {text}", flush=True)  # noqa: E731
+    if args.kind == "compare":
+        report = compare(wb, args.countries, args.topics.split(",") if args.topics else None,
+                         args.indicators, emit=say, write=not args.no_summary)
+    elif args.kind == "brief":
+        report = report_recipes.country_brief(wb, args.country, emit=say, write=not args.no_summary)
+    elif args.kind == "poverty":
+        report = report_recipes.poverty_profile(wb, args.country, emit=say, write=not args.no_summary)
+    else:  # library passages without Laya on the command line (it needs ~1.7GB; web.py uses the full search)
+        report = report_recipes.what_works(wb, " ".join(args.intervention), args.region, args.outcome, emit=say,
+                                           write=not args.no_summary, library=report_recipes.library_search())
     folder = report_export.write_all(report, Path(args.out), wb)
     s = report["summary"]
     print(f"\n{report['title']}\nSummary: {s['status']}" + (f" — not verified: {s['unverified']}" if s["unverified"] else "")

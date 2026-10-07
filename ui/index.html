@@ -51,22 +51,50 @@
 
 <main id="reports-view" hidden>
   <form id="report-form" class="report-form">
-    <h2>Compare countries</h2>
-    <p class="muted">A report built from World Bank data: Python fetches every number and writes every table;
-      the model only writes a short summary (one request, fact-checked). Download it as PDF, Word, Markdown, LaTeX,
-      or the data itself.</p>
-    <label>Countries <span class="muted">(2–6, separated by commas)</span>
-      <input type="text" id="r-countries" placeholder="Kenya, Ghana, Nigeria" autocomplete="off" required>
-    </label>
+    <h2>Make a report</h2>
+    <p class="muted">Python fetches every number and writes every table; the model only writes a short summary
+      (one request, fact-checked). Download it as PDF, Word, Markdown, LaTeX, or the data itself.</p>
     <fieldset>
-      <legend>Topics</legend>
-      <div id="r-topics" class="topics"></div>
+      <legend>Report</legend>
+      <div id="r-kinds" class="topics">
+        <label><input type="radio" name="r-kind" value="compare" checked> Compare countries</label>
+        <label><input type="radio" name="r-kind" value="brief"> Country brief</label>
+        <label><input type="radio" name="r-kind" value="poverty"> Poverty profile</label>
+        <label><input type="radio" name="r-kind" value="works"> What works</label>
+      </div>
     </fieldset>
-    <label>Extra indicators <span class="muted">(optional: a World Bank id or a few words, separated by commas)</span>
-      <input type="text" id="r-indicators" placeholder="female labor force participation, NY.GDP.MKTP.KD.ZG" autocomplete="off">
-    </label>
+    <div data-kind="compare">
+      <label>Countries <span class="muted">(2–6, separated by commas)</span>
+        <input type="text" id="r-countries" placeholder="Kenya, Ghana, Nigeria" autocomplete="off">
+      </label>
+      <fieldset>
+        <legend>Topics</legend>
+        <div id="r-topics" class="topics"></div>
+      </fieldset>
+      <label>Extra indicators <span class="muted">(optional: a World Bank id or a few words, separated by commas)</span>
+        <input type="text" id="r-indicators" placeholder="female labor force participation, NY.GDP.MKTP.KD.ZG" autocomplete="off">
+      </label>
+    </div>
+    <div data-kind="brief poverty" hidden>
+      <p class="muted" data-kind="brief" hidden>Income, growth (with long-run history and the World Bank's forecast),
+        poverty, health and education against the country's income group and region; differences between regions;
+        J-PAL evaluations and library papers about the country.</p>
+      <p class="muted" data-kind="poverty" hidden>The $3.00, $4.20 and $8.30 poverty lines for every survey year, the
+        poverty gap, the number of poor, how old and how far apart the surveys are, peers, and income by region.</p>
+      <label>Country <input type="text" id="r-country" placeholder="Kenya" autocomplete="off"></label>
+    </div>
+    <div data-kind="works" hidden>
+      <p class="muted">Randomized evaluations from J-PAL grouped by outcome and region (their results quoted, not
+        judged), reviews and meta-analyses from OpenAlex, and passages from your library. Every citation in the
+        summary is checked against them.</p>
+      <label>Intervention <input type="text" id="r-intervention" placeholder="cash transfers" autocomplete="off"></label>
+      <label>Region or country <span class="muted">(optional)</span>
+        <input type="text" id="r-region" placeholder="Sub-Saharan Africa" autocomplete="off"></label>
+      <label>Outcome <span class="muted">(optional)</span>
+        <input type="text" id="r-outcome" placeholder="student learning" autocomplete="off"></label>
+    </div>
     <label class="check"><input type="checkbox" id="r-summary" checked> Write a summary with the model
-      <span class="muted">(~2–5K Groq tokens; unticked: Python lists the highlights, free)</span></label>
+      <span class="muted" id="r-cost">(~2–5K Groq tokens; unticked: Python lists the highlights, free)</span></label>
     <button type="submit" id="r-make">Make report</button>
   </form>
   <div id="report-list"></div>

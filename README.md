@@ -46,12 +46,22 @@ market-rate and PPP values, current vs constant prices are flagged, newer data i
 when the model asks for an old year, and correlations are stated with their direction in
 words.
 
-**Reports** (in the web page's Reports tab, or from the command line): compare 2-6 countries on
-income, growth, poverty, health, education and more. Python fetches every number and builds every
-table; the model writes only a short summary, which is fact-checked (~2-5K Groq tokens; untick
-"Write a summary" and Python lists the highlights instead, for free). Download as PDF, Word,
-Markdown, LaTeX (with BibTeX), or the data itself. Country briefs, poverty profiles and
-"what works" reviews are next.
+**Reports** (in the web page's Reports tab, or from the command line). Python fetches every number
+and builds every table; the model writes only a short summary, which is fact-checked (untick "Write
+a summary" and Python lists the highlights instead, for free). Download as PDF, Word, Markdown,
+LaTeX (with BibTeX), or the data itself.
+- **Compare countries**: 2-6 countries on income, growth, poverty, health, education and more (~2-5K Groq tokens).
+- **Country brief**: one country against its income group and region; long-run growth, the World
+  Bank's growth forecast, differences between regions, and J-PAL studies and library papers about it (~3-5K).
+- **Poverty profile**: the $3.00, $4.20 and $8.30 lines for every survey year, the number of poor,
+  how old and how far apart the surveys are, and income by region (~2-4K).
+- **What works**: randomized evaluations of an intervention from J-PAL, grouped by outcome and
+  region with their results quoted, plus reviews from OpenAlex and passages from the library. The
+  summary may cite only those sources, and every citation is checked (~4-6K).
+
+The token figures can double if the fact-check asks the model for one fix. Sections whose data
+isn't set up on a computer (long-run data, Global Data Lab, J-PAL, the paper library) are left out
+with a note.
 
 Online, answers come from a hosted open model (Groq, free tier). Offline, a local pipeline
 (Ollama + `phi3.5`) answers from the paper library.
@@ -101,7 +111,10 @@ need no setup. Free tiers: Groq allows about 15 questions a day; OpenAlex about 
 .venv/bin/python web.py                          # web page at http://127.0.0.1:8765 (this computer only)
 .venv/bin/python ask.py                          # or ask questions in the terminal
 .venv/bin/python workflows.py compare Kenya Ghana Nigeria   # a report: PDF, Word, Markdown, LaTeX, data
-                                                             # (--no-summary: no Groq tokens)
+.venv/bin/python workflows.py brief Kenya                    # country brief
+.venv/bin/python workflows.py poverty India                  # poverty profile
+.venv/bin/python workflows.py works cash transfers --region "South Asia"   # "what works" review
+                                                             # (--no-summary on any of them: no Groq tokens)
 .venv/bin/python longrun.py "South Korea" Ghana  # long-run comparison from the command line
 
 .venv/bin/python tests/test_tools.py             # tool tests (no API usage)

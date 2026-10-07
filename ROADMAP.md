@@ -36,7 +36,7 @@ won't change. This project wins on what they can't do reliably:
 | 2. Computation | Done: `run_python` (sandboxed), `devecon.py`, automatic charts (no tokens) |
 | 3. Literature | Done: development library (15 papers), OpenAlex + citation checks, J-PAL's 1,318 evaluation summaries. 3ie not usable (no public API) |
 | 4. Long-run / subnational | Done: Maddison, Penn World Table 11.0, DHS surveys (with regions), Global Data Lab subnational HDI; other agencies deferred |
-| 5. Workflows | Engine + "Compare countries" built (`workflows.py`, web Reports tab, PDF/Word/Markdown/LaTeX/BibTeX/data); country brief, poverty profile, "what works" next |
+| 5. Workflows | Done: compare countries, country brief, poverty profile, "what works" (`workflows.py`, `report_recipes.py`, web Reports tab, PDF/Word/Markdown/LaTeX/BibTeX/data) |
 | 6. Interface | Done: local web UI (`web.py`) and a setup script for other people's own copies (`setup_assistant.py`) |
 
 The Oct 6 work (benchmark fixes, peer groups, `devecon.py`, `longrun.py`, the development library,
@@ -213,10 +213,18 @@ BibTeX, data zip; no reproduce script for now):
       bundles (income, growth, poverty, health, education, infrastructure, jobs, population,
       macro) + extra indicators; average growth computed in Python; summary ~2-5K tokens, or
       free (a "Write a summary" checkbox: unticked, Python lists highest/lowest per indicator).
-- [ ] **Country brief**: growth, poverty, inequality, human development vs peers + recent research.
-- [ ] **"What works" review**: evidence on an intervention (cash transfers, deworming,
-      microfinance) by outcome and region, from the RCT databases.
-- [ ] **Poverty profile**: levels, trends, survey vintages, subnational spread.
+- [x] **Country brief** (`report_recipes.country_brief`, Oct 2026): income, growth, poverty,
+      health, education against the income group and region (aggregates + rank), 10-year growth,
+      GEP forecast, Maddison and PWT growth accounting, HDI (GDL) and under-5 mortality (DHS) by
+      region, J-PAL evaluations and library papers about the country (listed, not summarized).
+- [x] **"What works" review** (`report_recipes.what_works`, Oct 2026): J-PAL evaluations grouped
+      by outcome and region with their results quoted (disagreements shown side by side, not
+      judged), one OpenAlex search for reviews, 3 library passages; the summary may cite only
+      those, checked by code.
+- [x] **Poverty profile** (`report_recipes.poverty_profile`, Oct 2026): $3.00/$4.20/$8.30 by survey
+      year, poverty gap, Gini, number of poor (computed), survey timing, peers, income per person
+      by region (GDL — no free source for poverty rates by region).
+- Not yet done: a live-Groq run of the three new reports to measure their real token cost.
 
 ## Phase 6: An interface for anyone
 

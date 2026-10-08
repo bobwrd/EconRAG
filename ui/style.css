@@ -80,6 +80,31 @@ nav { display: flex; gap: 6px; flex-wrap: wrap; }
 #glossary-list dt { font-weight: 600; margin-top: 10px; }
 #glossary-list dd { margin: 2px 0 0; color: var(--muted); }
 
+.numref {
+  font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer;
+  text-decoration: underline dotted; text-underline-offset: 3px;
+}
+.numref.s-found { text-decoration-color: var(--ok); }
+.numref.s-computed { text-decoration-color: var(--muted); }
+.numref.s-not-found { text-decoration-color: var(--warn); text-decoration-style: wavy; }
+.numref:hover, .numref:focus-visible { background: var(--code-bg); border-radius: 3px; }
+.num-detail { margin: 10px 0; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); font-size: 0.9rem; }
+.num-detail p { margin: 0 0 6px; }
+.num-detail .src-item { margin: 8px 0; overflow-wrap: anywhere; }
+.num-detail dl { display: grid; grid-template-columns: max-content 1fr; gap: 0 12px; margin: 4px 0 0; }
+.num-detail dt { color: var(--muted); }
+.num-detail dd { margin: 0; }
+.num-detail blockquote { margin: 6px 0; padding-left: 10px; border-left: 3px solid var(--line); color: var(--muted); }
+
+.report-form select { display: block; width: 100%; margin-top: 4px; padding: 7px 10px; font-weight: 400;
+  border: 1px solid var(--line); border-radius: 8px; background: var(--bg); }
+.report-form select.add-to { width: auto; max-width: 100%; margin: -4px 0 10px; font-size: 0.9rem; }
+.report-form .years { display: flex; gap: 16px; flex-wrap: wrap; }
+.report-form .years legend { font-weight: 600; font-size: 0.92rem; }
+.report-form .years label { display: inline-flex; gap: 6px; align-items: center; margin: 6px 0; }
+.report-form input[type=number] { width: 7em; padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--bg); font-weight: 400; }
+
 .drawer {
   position: fixed; z-index: 10; top: 0; left: 0; bottom: 0; width: min(340px, 100%);
   background: var(--paper); border-right: 1px solid var(--line); box-shadow: var(--shadow);
@@ -96,7 +121,8 @@ nav { display: flex; gap: 6px; flex-wrap: wrap; }
 #sessions-list .open:hover { background: var(--bg); }
 #sessions-list .current .open { font-weight: 600; }
 #sessions-list .when { display: block; font-size: 0.8rem; color: var(--muted); font-weight: 400; }
-#sessions-list .del { margin-top: 8px; font-size: 0.8rem; padding: 2px 8px; }
+#sessions-list .acts { display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+#sessions-list .acts > * { font-size: 0.8rem; padding: 2px 8px; text-align: center; text-decoration: none; color: inherit; }
 
 main, #reports-view { flex: 1; width: min(860px, calc(100% - 32px)); margin: 0 auto; padding: 20px 0 140px; }
 .intro p { color: var(--muted); max-width: 60ch; }

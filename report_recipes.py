@@ -1,5 +1,5 @@
 """
-The one-country and evidence reports (ROADMAP Phase 5), built the same way as
+The one-country and evidence reports, built the same way as
 workflows.compare: Python gathers the data and writes every table; one
 optional Groq request writes the summary from a compact fact sheet, checked by
 verify.py (one revision at most); unticked, Python lists the highlights for free.
@@ -21,6 +21,7 @@ import datetime
 import importlib
 import json
 import re
+import statistics
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -165,7 +166,8 @@ def peer_columns(wb, code: str) -> list[str]:
             f"Rank among {inc.lower()} economies"]
 
 
-def peer_rows(wb, code: str, indicators: list[str], start: int, log, emit) -> tuple[list[list], list]:
+def peer_rows(wb, code: str, indicators: list[str], start: int, log, emit, end: int | None = None
+              ) -> tuple[list[list], list]:
     """One row per indicator: the country, its income-group and region aggregates
     (World Bank figures, population-weighted), and its rank in the income group.
     Fact rows say "higher"/"lower" than each group, computed here."""
@@ -175,9 +177,9 @@ def peer_rows(wb, code: str, indicators: list[str], start: int, log, emit) -> tu
     for ind in indicators:
         name = wb.by_id[ind]["name"]
         emit("step", f"World Bank: {name}")
-        args = {"series": ind, "countries": codes, "start": start, "peers": True}
+        args = {"series": ind, "countries": codes, "start": start, "end": end, "peers": True}
         try:
-            result = wb.get(ind, codes, start, None, peers=True)
+            result = wb.get(ind, codes, start, end, peers=True)
         except Exception as e:  # one failed indicator shouldn't sink the report
             emit("step", f"  skipped {ind}: {e}")
             continue
@@ -218,6 +220,53 @@ def peer_notes(rows_ids: list[str]) -> list[str]:
     return notes
 
 
+MAX_PEERS = 8
+CUSTOM_PEER_INDICATORS = ["NY.GDP.PCAP.PP.CD", "NY.GDP.PCAP.KD.ZG", "SI.POV.DDAY", "SP.DYN.LE00.IN", "SH.DYN.MORT",
+                          "SE.SEC.ENRR"]
+
+
+def custom_peers(wb, code: str, peers: list[str], indicators: list[str], start: int, end: int | None,
+                 log, emit) -> dict:
+    """The country next to peer countries you choose (e.g. its neighbours), with the peers' median.
+    The median is of the peers' latest values (years can differ), not a weighted average."""
+    codes = [c for c in dict.fromkeys(wb.country(p) for p in peers) if c != code]
+    bad = [wb.countries[c]["name"] for c in codes if wb.countries[c]["aggregate"]]
+    if bad:
+        raise ValueError(f"peers must be countries, not groups: {', '.join(bad)}")
+    if not 1 <= len(codes) <= MAX_PEERS:
+        raise ValueError(f"choose 1-{MAX_PEERS} peer countries")
+    names = [wb.countries[c]["name"] for c in [code] + codes]
+    rows, results = [], []
+    for ind in indicators:
+        emit("step", f"World Bank, your peers: {wb.by_id[ind]['name']}")
+        args = {"series": ind, "countries": [code] + codes, "start": start, "end": end}
+        try:
+            result = wb.get(ind, [code] + codes, start, end)
+        except Exception as e:
+            emit("step", f"  skipped {ind}: {e}")
+            continue
+        log.results.append(("get_data", args, result))
+        results.append(("get_data", args, result))
+        log.used.append(ind)
+        by = {e["code"]: e.get("latest") for e in result["economies"]}
+        peer_values = [by[c]["value"] for c in codes if by.get(c)]
+        median = statistics.median(peer_values) if peer_values else None
+        rows.append([wb.by_id[ind]["name"]] + [f"{fmt(by[c]['value'], ind)} ({by[c]['year']})" if by.get(c) else "–"
+                                               for c in [code] + codes]
+                    + [fmt(median, ind) if median is not None else "–"])
+        own = by.get(code)
+        if own and median is not None:
+            log.facts.append({"indicator": wb.by_id[ind]["name"], "value": fmt(own["value"], ind), "year": own["year"],
+                              "peer median": fmt(median, ind), "peers": ", ".join(names[1:]),
+                              "vs peer median": ("higher" if own["value"] > median else
+                                                 "lower" if own["value"] < median else "the same")})
+    notes = ["Peer median: the middle of the chosen countries' latest values (their years can differ), "
+             "not a population-weighted average."] + peer_notes(indicators)[1:]
+    return section("Compared with your chosen peers", {"columns": ["Indicator"] + names + ["Peer median"],
+                                                         "rows": rows}, notes, results=results) if rows else \
+        section("Compared with your chosen peers", notes=["No data for these countries."])
+
+
 def section(heading: str, table: dict | None = None, notes: list | None = None, items: list | None = None,
             results: list | None = None) -> dict:
     """A report section: a table, a list of items (studies, papers), or just notes (a section switched off)."""
@@ -226,7 +275,7 @@ def section(heading: str, table: dict | None = None, notes: list | None = None, 
 
 
 def draw(sections: list[dict], wb, emit):
-    """Line charts for each section's first data result (no peer bars, no maps: see NOTES.md)."""
+    """Line charts for each section's first data result (no peer bars, no maps: they made one report 30x slower)."""
     emit("step", "Drawing charts")
     headline = [s["_results"][0] for s in sections if s["_results"]][:workflows.MAX_CHARTS]
     try:
@@ -281,18 +330,23 @@ def _series_points(entry: dict) -> list[tuple[int, float]]:
 
 
 # ------------------------------------------------------------------ country brief
-def country_brief(wb, country: str, emit=lambda *_: None, write: bool = True) -> dict:
+def country_brief(wb, country: str, emit=lambda *_: None, write: bool = True, start=None, end=None,
+                  indicators: list[str] | None = None, peers: list[str] | None = None) -> dict:
+    """indicators: extra World Bank indicators (ids or words); peers: countries to set it beside
+    (up to MAX_PEERS); start/end: the years for World Bank data (default the last WINDOW years)."""
     code = wb.country(country)
     if wb.countries[code]["aggregate"]:
         raise ValueError(f"{wb.countries[code]['name']} is a group of countries; a brief needs one country")
     name = wb.countries[code]["name"]
     (inc, inc_code), (reg, reg_code) = groups(wb, code)
-    start = datetime.date.today().year - workflows.WINDOW
+    start, end = workflows.year_range(start, end)
+    extra = [workflows.resolve_indicator(wb, t) for t in indicators or [] if str(t).strip()]
+    peers = [p for p in peers or [] if str(p).strip()]
     log, sections = new_log(), []
     cols = peer_columns(wb, code)
 
     def peer_section(heading, indicators, extra_notes=()):
-        rows, results = peer_rows(wb, code, indicators, start, log, emit)
+        rows, results = peer_rows(wb, code, indicators, start, log, emit, end)
         if rows:
             sections.append(section(heading, {"columns": cols, "rows": rows},
                                     peer_notes(indicators) + list(extra_notes), results=results))
@@ -305,7 +359,7 @@ def country_brief(wb, country: str, emit=lambda *_: None, write: bool = True) ->
     codes = [code] + [c for c in (inc_code, reg_code) if c]
     names = [name] + [g for g, c in ((inc, inc_code), (reg, reg_code)) if c]
     growth_rows, growth_results = [], []
-    row, values = workflows.growth_row(wb, codes, names)
+    row, values = workflows.growth_row(wb, codes, names, end)
     if row:
         cells = dict(zip(names, row[1:]))
         growth_rows.append([row[0], cells.get(name, "–"), cells.get(inc, "–"), cells.get(reg, "–"), "–"])
@@ -319,7 +373,7 @@ def country_brief(wb, country: str, emit=lambda *_: None, write: bool = True) ->
                                        "the same")
             log.facts.append(fact)
         log.used.append("NY.GDP.PCAP.KD")
-    rows, results = peer_rows(wb, code, ["NY.GDP.PCAP.KD.ZG"], start, log, emit)
+    rows, results = peer_rows(wb, code, ["NY.GDP.PCAP.KD.ZG"], start, log, emit, end)
     growth_rows += rows
     growth_results += results
     emit("step", "World Bank: Global Economic Prospects growth forecast")
@@ -353,6 +407,10 @@ def country_brief(wb, country: str, emit=lambda *_: None, write: bool = True) ->
                  ["The poverty profile report shows every survey year, the $8.30 line and the number of poor."])
     peer_section("Health", HEALTH)
     peer_section("Education", EDUCATION)
+    if extra:
+        peer_section("Your indicators", extra)
+    if peers:
+        sections.append(custom_peers(wb, code, peers, CUSTOM_PEER_INDICATORS + extra, start, end, log, emit))
     sections.append(subnational(name, log, emit))
     sections.append(country_research(wb, code, name, log, emit))
 
@@ -363,8 +421,13 @@ def country_brief(wb, country: str, emit=lambda *_: None, write: bool = True) ->
              f"Indicators unless stated, fetched when the report was made; {name} is compared with its World "
              f"Bank income group ({inc}) and region ({reg}).",
              "Research lists studies and papers about the country; the summary doesn't describe their findings."]
+    if (note := workflows.years_note(start, end)):
+        about += note
+        about.append("The year range applies to World Bank data; forecasts, the IMF outlook, long-run data and "
+                     "regions within the country are shown in full.")
     emit("step", "Done")
-    return finish("brief", f"{name}: country brief", {"country": name}, summary, sections, about, log, facts)
+    inputs = {"country": name, "start": start, "end": end, "indicators": indicators or [], "peers": peers}
+    return finish("brief", f"{name}: country brief", inputs, summary, sections, about, log, facts)
 
 
 def imf_outlook(wb, code: str, name: str, log, emit) -> dict:
@@ -712,6 +775,26 @@ def outcome_labels(text: str) -> list[str]:
         elif part:
             out.append(part)
     return out
+
+
+MAX_OUTCOMES = 40  # outcome labels offered in the web form's list
+
+
+def options(wb) -> dict:
+    """The short, fixed lists the web form offers as drop-downs: countries, World Bank regions,
+    and J-PAL's most common outcome labels (empty when J-PAL isn't set up)."""
+    economies = [m for m in wb.countries.values() if not m["aggregate"]]
+    outcomes = []
+    jp = load("jpal")
+    if jp is not None:
+        counts = {}
+        for e in jp.evals:
+            for label in outcome_labels(e.get("outcome_of_interest", "")):
+                counts[label] = counts.get(label, 0) + 1
+        outcomes = sorted(sorted(counts, key=lambda k: -counts[k])[:MAX_OUTCOMES], key=str.lower)
+    return {"countries": sorted(m["name"] for m in economies),
+            "regions": sorted({m["region"] for m in economies if m["region"]}),
+            "outcomes": outcomes, "max_peers": MAX_PEERS, "window": workflows.WINDOW}
 
 
 def _region_codes(wb, region: str) -> tuple[set[str], str]:

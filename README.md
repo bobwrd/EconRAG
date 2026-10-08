@@ -51,7 +51,8 @@ words.
 **Reports** (in the web page's Reports tab, or from the command line). Python fetches every number
 and builds every table; the model writes only a short summary, which is fact-checked (untick "Write
 a summary" and Python lists the highlights instead, for free). Download as PDF, Word, Markdown,
-LaTeX (with BibTeX), JSON, CSV tables, or the data itself.
+LaTeX (with BibTeX), JSON, CSV tables, a Jupyter notebook, or the data itself. Comparisons and
+briefs take a year range; a brief can add your own indicators and a peer group of up to 8 countries.
 - **Compare countries**: 2-6 countries on income, growth, poverty, health, education and more (~2-5K Groq tokens).
 - **Country brief**: one country against its income group and region; long-run growth, the World
   Bank's growth forecast, differences between regions, and J-PAL studies and library papers about it (~3-5K).
@@ -84,6 +85,8 @@ git clone https://github.com/bobwrd/EconRAG.git
 cd EconRAG
 python3 setup_assistant.py            # shows what's set up (changes nothing)
 python3 setup_assistant.py install    # walks through each missing step, asking first
+python3 setup_assistant.py verify     # quick self-test (about 30 seconds)
+python3 setup_assistant.py uninstall  # remove what setup added, asking for each
 ```
 
 The setup script asks before every download and says where it comes from and how big it is.
@@ -112,7 +115,8 @@ need no setup. Free tiers: Groq allows about 15 questions a day; OpenAlex about 
 
 ```bash
 .venv/bin/python web.py                          # web page at http://127.0.0.1:8765 (this computer only;
-                                                 # chats are saved: "Past chats" reopens them)
+                                                 # chats are saved: "Past chats" reopens or exports
+                                                 # them; click a number to see where it came from)
 .venv/bin/python ask.py                          # or ask questions in the terminal
 .venv/bin/python workflows.py compare Kenya Ghana Nigeria   # a report: PDF, Word, Markdown, LaTeX, data
 .venv/bin/python workflows.py brief Kenya                    # country brief
@@ -149,6 +153,4 @@ Optional: `.venv/bin/pip install -e .` adds the commands `econrag-web`, `econrag
 `econrag-setup` and `econrag-report` (an in-place install: the code reads its files from this folder).
 GitHub Actions runs the tests that need no data files on every push (`.github/workflows/tests.yml`).
 
-See `NOTES.md` for architecture, design decisions, and known pitfalls, `ROADMAP.md` for
-progress and what's next, `new-roadmap.md` for the plan for packaging, sessions and reports, and `SECURITY.md` for the
-security model.
+See `SECURITY.md` for the security model.

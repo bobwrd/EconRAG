@@ -1,5 +1,5 @@
 """
-The analyst's run_python tool (ROADMAP Phase 2): calculations the other tools
+The analyst's run_python tool: calculations the other tools
 don't do — growth needed to hit a target, projections, regressions,
 population-weighted averages, convergence across many countries.
 

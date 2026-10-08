@@ -1,5 +1,5 @@
 """
-ROADMAP Phase 0b: a 30-question benchmark of the online analyst, scored by code.
+A benchmark of the online analyst, scored by code.
 
     .venv/bin/python eval/benchmark.py run [name]      # answers -> eval/benchmark/<name>.jsonl
     .venv/bin/python eval/benchmark.py run [name] --only retest   # the ~22 questions recent fixes target

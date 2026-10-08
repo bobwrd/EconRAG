@@ -24,6 +24,10 @@ def _folder():
     (data / "atlas" / "county_outcomes_simple.csv").write_text("a,b\n1,2\n")
     (data / "imf" / "LUR.json").write_text("{}")
     (data / "embeddings_BAAI_bge-small-en-v1.5.npy").write_bytes(b"\0" * 10)
+    (data / "usage").mkdir()  # saved chats and token counts aren't data: never listed
+    (data / "usage" / "2026-10-09.jsonl").write_text("{}")
+    (data / "sessions.db").write_bytes(b"x")
+    (data / "sessions.db-journal").write_bytes(b"x")
     return data
 
 

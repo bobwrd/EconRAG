@@ -86,6 +86,72 @@ async function loadGlossary() {
 }
 
 // Underlines the first mention of each glossary term; hover or tap shows the definition.
+// ------------------------------------------------------------ evidence inspector: click a number
+const NUM_STATUS = {
+  found: "found in what the tools returned",
+  computed: "worked out from other numbers in the answer (a difference, ratio or span); the fact-check accepts it",
+  "not found": "not found in any tool result — treat with caution",
+};
+
+function markNumbers(root, numbers) {
+  const known = numbers.filter(n => n.number);
+  if (!known.length) return;
+  const byText = new Map(known.map((n, i) => [n.number, i]));
+  const reEsc = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp("(?<![\\d.,])(" + [...byText.keys()].sort((a, b) => b.length - a.length).map(reEsc).join("|") + ")(?!\\d)", "g");
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: n => n.parentElement.closest("code, pre, a, .numref") ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT,
+  });
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  for (const node of nodes) {
+    const text = node.nodeValue;
+    let last = 0, m;
+    const frag = document.createDocumentFragment();
+    re.lastIndex = 0;
+    while ((m = re.exec(text))) {
+      frag.append(text.slice(last, m.index));
+      const n = known[byText.get(m[1])];
+      const b = document.createElement("button");
+      b.type = "button";
+      b.className = "numref s-" + n.status.replace(" ", "-");
+      b.textContent = m[1];
+      b.title = `${m[1]}: ${NUM_STATUS[n.status]}. Click to see where it came from.`;
+      b.addEventListener("click", () => showNumber(root, b, n));
+      frag.append(b);
+      last = m.index + m[1].length;
+    }
+    if (!last) continue;
+    frag.append(text.slice(last));
+    node.replaceWith(frag);
+  }
+}
+
+function showNumber(root, button, n) {
+  let box = root.nextElementSibling?.classList.contains("num-detail") ? root.nextElementSibling : null;
+  if (!box) {
+    box = document.createElement("div");
+    box.className = "num-detail";
+    root.after(box);
+  }
+  if (box.dataset.number === n.number && !box.hidden) { box.hidden = true; return; }
+  box.dataset.number = n.number;
+  let h = `<p><strong>${esc(n.number)}</strong> — ${esc(NUM_STATUS[n.status])}.</p>`;
+  for (const s of n.sources) {
+    const args = Object.entries(s.args || {}).filter(([k]) => k !== "code")
+      .map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`).join(", ");
+    h += `<div class="src-item"><code>${esc(s.tool)}</code> <span class="args">${esc(args)}</span>` +
+      `<div class="muted">at <code>${esc(s.path)}</code></div>`;
+    const ctx = Object.entries(s.context || {});
+    if (ctx.length) h += "<dl>" + ctx.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(String(v))}</dd>`).join("") + "</dl>";
+    h += "</div>";
+  }
+  for (const q of n.quotes || []) h += `<blockquote>…${esc(q)}…</blockquote>`;
+  box.innerHTML = h + '<button type="button" class="ghost close">Close</button>';
+  $(".close", box).addEventListener("click", () => { box.hidden = true; button.focus(); });
+  box.hidden = false;
+}
+
 function highlightTerms(root) {
   if (!glossary.length) return;
   const patterns = [];
@@ -217,6 +283,7 @@ function showResult(card, r) {
   const plain = $(".plain", res);
   plain.innerHTML = markdown(r.answer);
   highlightTerms(plain);
+  markNumbers(plain, r.numbers || []);
   technicalItems($(".tech-items", res), r.technical || []);
   const charts = $(".charts", res);
   for (const src of r.charts) {
@@ -352,7 +419,7 @@ async function readStream(res, onEvent) {
   }
 }
 
-const FORMAT_LABELS = {pdf: "PDF", docx: "Word", md: "Markdown (zip)", tex: "LaTeX (zip)", bib: "BibTeX", json: "JSON", csv: "Tables (CSV zip)", data: "Data (zip)"};
+const FORMAT_LABELS = {pdf: "PDF", docx: "Word", md: "Markdown (zip)", tex: "LaTeX (zip)", bib: "BibTeX", json: "JSON", csv: "Tables (CSV zip)", ipynb: "Jupyter notebook", data: "Data (zip)"};
 
 function tableHtml(t) {
   return '<div class="table"><table><thead><tr>' + t.columns.map(c => `<th>${esc(c)}</th>`).join("") +
@@ -411,13 +478,16 @@ function showReportKind() {
 
 function reportBody() {
   const kind = reportKind(), summary = $("#r-summary").checked;
+  const list = id => $(id).value.split(",").map(x => x.trim()).filter(Boolean);
+  const years = {start: $("#r-start").value || null, end: $("#r-end").value || null};
   if (kind === "compare") {
     const topics = [...document.querySelectorAll("#r-topics input:checked")].map(i => i.value);
-    return {kind, countries: $("#r-countries").value, topics, summary,
-      indicators: $("#r-indicators").value.split(",").map(x => x.trim()).filter(Boolean)};
+    return {kind, countries: $("#r-countries").value, topics, summary, indicators: list("#r-indicators"), ...years};
   }
   if (kind === "works") return {kind, intervention: $("#r-intervention").value, region: $("#r-region").value,
     outcome: $("#r-outcome").value, summary};
+  if (kind === "brief") return {kind, country: $("#r-country").value, summary, ...years,
+    indicators: list("#r-brief-indicators"), peers: $("#r-peers").value};
   return {kind, country: $("#r-country").value, summary};
 }
 
@@ -458,7 +528,52 @@ async function makeReport() {
   }
 }
 
+// Drop-downs for the report form's short, fixed lists (countries, regions, J-PAL outcomes).
+// The text boxes stay if the lists can't be loaded.
+let reportOptions = null;
+
+function options(values, first) {
+  return `<option value="">${esc(first)}</option>` + values.map(v => `<option>${esc(v)}</option>`).join("");
+}
+
+function toSelect(id, html) {
+  const input = $("#" + id);
+  if (!input || input.tagName === "SELECT") return;
+  const select = document.createElement("select");
+  select.id = id;
+  select.innerHTML = html;
+  if (input.value) select.value = input.value;
+  input.replaceWith(select);
+}
+
+async function loadReportOptions() {
+  if (reportOptions) return;
+  try {
+    const res = await fetch("/api/report-options");
+    if (!res.ok) return;
+    reportOptions = await res.json();
+  } catch (e) { return; }
+  const o = reportOptions;
+  toSelect("r-country", options(o.countries, "Choose a country…"));
+  toSelect("r-region", options([], "Anywhere") +
+    `<optgroup label="Regions">${o.regions.map(r => `<option>${esc(r)}</option>`).join("")}</optgroup>` +
+    `<optgroup label="Countries">${o.countries.map(c => `<option>${esc(c)}</option>`).join("")}</optgroup>`);
+  if (o.outcomes.length) toSelect("r-outcome", options(o.outcomes, "Any outcome"));
+  for (const sel of document.querySelectorAll("select.add-to")) {
+    sel.innerHTML = options(o.countries, sel.dataset.target === "r-peers" ? "Add a peer country…" : "Add a country…");
+    sel.hidden = false;
+    sel.addEventListener("change", () => {
+      const target = $("#" + sel.dataset.target);
+      const have = target.value.split(",").map(x => x.trim()).filter(Boolean);
+      if (sel.value && !have.includes(sel.value)) target.value = [...have, sel.value].join(", ");
+      sel.value = "";
+    });
+  }
+  $("#r-end").max = $("#r-start").max = new Date().getFullYear();
+}
+
 function setMode(mode) {
+  if (mode === "reports") loadReportOptions();
   document.querySelectorAll(".modes button").forEach(b => b.classList.toggle("on", b.dataset.mode === mode));
   $("#log").hidden = mode !== "chat";
   $("#ask").hidden = mode !== "chat";
@@ -512,7 +627,8 @@ async function loadSessions() {
       `<li class="${s.id === r.current ? "current" : ""}"><button type="button" class="open" data-id="${s.id}">` +
       `${esc(s.title)}<span class="when">${esc(s.updated.replace("T", " ").slice(0, 16))} · ` +
       `${s.answers} answer${s.answers === 1 ? "" : "s"}</span></button>` +
-      `<button type="button" class="ghost del" data-id="${s.id}" aria-label="Delete this chat">Delete</button></li>`).join("");
+      `<span class="acts"><a class="ghost" href="/api/sessions/export?id=${s.id}" download>Export</a>` +
+      `<button type="button" class="ghost del" data-id="${s.id}" aria-label="Delete this chat">Delete</button></span></li>`).join("");
   } catch (e) { /* the page still works */ }
 }
 
@@ -581,7 +697,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#sessions-list").addEventListener("click", e => {
     const b = e.target.closest("button");
     if (!b) return;
-    if (b.classList.contains("del")) deleteSession(Number(b.dataset.id), b.previousElementSibling.firstChild.textContent);
+    if (b.classList.contains("del")) deleteSession(Number(b.dataset.id), b.closest("li").querySelector(".open").firstChild.textContent);
     else openSession(Number(b.dataset.id));
   });
   $("#glossary-filter").addEventListener("input", e => {

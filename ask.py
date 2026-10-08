@@ -30,7 +30,7 @@ from groq_client import GROQ_API_KEY, GROQ_MODEL, GroqUnavailable
 from groq_client import post as groq_post
 
 DATA_DIR = Path("data")
-EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"  # see NOTES.md "Retrieval"
+EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"  # with BM25: better candidates than MiniLM, same cost
 # Text some embedding models expect before a search query (not before passages).
 QUERY_PREFIXES = {"BAAI/bge-small-en-v1.5": "Represent this sentence for searching relevant passages: "}
 LAYA_MODEL = "convaiinnovations/laya"
@@ -57,7 +57,7 @@ TOP_K = 5            # chunks kept after Laya reranks the pool
 # 60, ranks 1 and 15 score almost alike (1/61 vs 1/75), so neither ranking can
 # promote its best picks; 10 lets them. Evidence in the top 3 / top 5 after
 # reranking: original questions 11->13 / 14->16 of 18, reworded 4->5 / 5->6
-# of 12; c=5 scored the same, c=20 in between (NOTES.md "Reranking").
+# of 12; c=5 scored the same, c=20 in between.
 RERANK_RRF_C = 10
 
 # Ollama's context window is shared by the prompt AND the answer. Five chunks
@@ -65,7 +65,7 @@ RERANK_RRF_C = 10
 # silently cut the START of the prompt (the instructions and the top-ranked
 # chunk), then ran out of room mid-answer and "context shifted", rambling for
 # thousands of tokens. Now the context is packed to fit, best chunk first.
-NUM_CTX = MODELS[OLLAMA_MODEL]["num_ctx"]  # see NOTES.md gotcha #2 before raising
+NUM_CTX = MODELS[OLLAMA_MODEL]["num_ctx"]  # raising it grows the KV cache (~384KB/token): 8GB machines thrash
 # Paper passages per analyst search: ~1,800 tokens (2-3 chunks), not all five
 # — Groq's free tier allows 8,000 tokens/minute, a single request over that
 # fails outright, and every tool round re-sends the passages.

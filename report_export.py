@@ -1,8 +1,9 @@
 """
 Turns a report from workflows.py into files: PDF (fpdf2), Word (python-docx),
 Markdown and LaTeX (zips with their charts and references.bib), BibTeX, JSON (the
-report as data), CSV (one file per table, zipped), and the data zip (the same as
-for chat answers: full series + what was fetched).
+report as data), CSV (one file per table, zipped), a Jupyter notebook (tables and
+charts rebuilt from data inside it), and the data zip (the same as for chat answers:
+full series + what was fetched).
 Every format is built from the same report dict, so they always agree.
 """
 
@@ -341,6 +342,68 @@ def tables_zip(report: dict) -> bytes:
     return _zip(files)
 
 
+# ------------------------------------------------------------------ Jupyter notebook
+MAX_NOTEBOOK_CHARTS = 12
+
+
+def _series(report: dict) -> list[dict]:
+    """Each World Bank (or similar) result's lines, {country: [[year, value], ...]}, once per indicator."""
+    out, seen = [], set()
+    for _, args, result in report.get("results", []):
+        if not isinstance(result, dict) or not result.get("economies"):
+            continue
+        title = result.get("name") or args.get("series", "")
+        if title in seen:
+            continue
+        lines = {}
+        for e in result["economies"]:
+            key = next((k for k in e if k.startswith(("series", "sampled"))), None)
+            if key and e[key]:
+                lines[e.get("economy") or e.get("code", "?")] = [[int(y), v] for y, v in e[key]]
+        if lines:
+            seen.add(title)
+            out.append({"title": title, "lines": lines})
+    return out[:MAX_NOTEBOOK_CHARTS]
+
+
+def notebook(report: dict) -> str:
+    """A notebook that runs as it is: the data is inside it (no downloads), pandas makes the tables
+    and matplotlib redraws the line charts. Needs pandas and matplotlib where it's opened."""
+    def md(text):
+        return {"cell_type": "markdown", "metadata": {}, "source": text}
+
+    def code(text):
+        return {"cell_type": "code", "execution_count": None, "metadata": {}, "outputs": [], "source": text}
+
+    tables = [{"heading": sec["heading"], "columns": sec["table"]["columns"], "rows": sec["table"]["rows"]}
+              for sec in report["sections"] if sec.get("table")]
+    data = {"tables": tables, "series": _series(report)}
+    cells = [md(f"# {report['title']}\n\n*Made {report['created'].replace('T', ' ')}*\n\n"
+                + (f"## Summary\n\n{report['summary']['text']}\n\n" if report["summary"]["text"] else "")
+                + f"> {summary_status(report)}"),
+             code("# Needs pandas and matplotlib:  pip install pandas matplotlib\n"
+                  "import json\n\nimport matplotlib.pyplot as plt\nimport pandas as pd\n\n"
+                  "# The report's tables and series, as they were when it was made\n"
+                  f"DATA = json.loads({json.dumps(data, ensure_ascii=False)!r})")]
+    for i, t in enumerate(tables):
+        notes = next((sec["notes"] for sec in report["sections"] if sec["heading"] == t["heading"]), [])
+        cells.append(md(f"## {t['heading']}" + "".join(f"\n\n- {n}" for n in notes)))
+        cells.append(code(f'table = DATA["tables"][{i}]\npd.DataFrame(table["rows"], columns=table["columns"])'))
+    if data["series"]:
+        cells.append(md("## Charts\n\nRedrawn from the series the report fetched (long series are sampled)."))
+        cells.append(code('for s in DATA["series"]:\n'
+                          '    fig, ax = plt.subplots(figsize=(8, 4))\n'
+                          '    for name, points in s["lines"].items():\n'
+                          '        ax.plot([p[0] for p in points], [p[1] for p in points], marker="o", label=name)\n'
+                          '    ax.set_title(s["title"])\n'
+                          '    ax.legend()\n'
+                          '    plt.show()'))
+    cells.append(md("## Sources\n\n" + "\n".join(f"- {source_text(s)}" for s in report["sources"])))
+    nb = {"cells": cells, "metadata": {"kernelspec": {"display_name": "Python 3", "language": "python", "name": "python3"},
+                                        "language_info": {"name": "python"}}, "nbformat": 4, "nbformat_minor": 4}
+    return json.dumps(nb, ensure_ascii=False, indent=1) + "\n"
+
+
 # ------------------------------------------------------------------ bundles
 def _zip(files: dict[str, bytes | str | Path]) -> bytes:
     buf = io.BytesIO()
@@ -373,6 +436,7 @@ FORMATS = {  # name -> (file name, media type)
     "bib": ("references.bib", "application/x-bibtex"),
     "json": ("report.json", "application/json"),
     "csv": ("tables_csv.zip", "application/zip"),
+    "ipynb": ("report.ipynb", "application/x-ipynb+json"),
     "data": ("data.zip", "application/zip"),
 }
 
@@ -393,6 +457,8 @@ def export(report: dict, fmt: str, wb=None) -> bytes:
         return as_json(report).encode()
     if fmt == "csv":
         return tables_zip(report)
+    if fmt == "ipynb":
+        return notebook(report).encode()
     if fmt == "data":
         return data_zip(report, wb)
     raise ValueError(f"unknown format {fmt!r}; choose from {', '.join(FORMATS)}")

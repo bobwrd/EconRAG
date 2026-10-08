@@ -1,5 +1,5 @@
 """
-ROADMAP Phase 0a: tool tests. Zero LLM tokens — the analyst's loop runs against
+Tool tests. Zero LLM tokens — the analyst's loop runs against
 a scripted fake Groq. Run after every change:
 
     .venv/bin/python tests/test_tools.py          # all (~10s; FRED tests need network)
@@ -483,7 +483,7 @@ def test_analyst_trims_requests_to_fit():
 
 
 def test_tool_schemas_stay_small():
-    # re-sent with every request against an 8K tokens/minute limit (NOTES.md gotcha #7)
+    # re-sent with every request against Groq's free 8K tokens/minute limit
     assert len(json.dumps(analyst.TOOLS)) / analyst.CHARS_PER_TOKEN < 2000
 
 
@@ -528,6 +528,27 @@ def test_openrouter_backup_only_for_long_groq_outages():
     finally:
         gc._session.post, gc.OPENROUTER_API_KEY, gc._groq_blocked_until, gc.USAGE_DIR = saved
         gc.last_provider = "groq"
+
+
+def test_each_number_in_an_answer_is_traced_to_where_it_came_from():
+    result = {"economies": [{"economy": "Kenya", "latest": {"year": 2022, "value": 36.13}},
+                            {"economy": "Ghana", "latest": {"year": 2022, "value": 34.1}}],
+              "note": "share 0.254 of people"}
+    evidence = {"results": [("get_data", {"series": "SI.POV.DDAY", "countries": ["KEN", "GHA"]}, result)],
+                "structured": [json.dumps(result)], "sources": set(),
+                "passages": ["[Banerjee et al. (2015)] Consumption rose by 41.7 percent among borrowers."]}
+    answer = ("Kenya's rate was 36.1% in 2022, 2.0 points above Ghana's 34.1; a quarter (25.4%) of people. "
+              "A study found 41.7 percent. Somewhere it is 77.7.")
+    found = {n["number"]: n for n in verify.locate_numbers(answer, evidence)}
+    kenya = found["36.1"]
+    assert kenya["status"] == "found" and kenya["sources"][0]["tool"] == "get_data"
+    assert kenya["sources"][0]["path"] == "economies[0].latest.value"
+    assert kenya["sources"][0]["context"] == {"year": 2022, "value": 36.13}
+    assert found["25.4"]["status"] == "found" and found["25.4"]["sources"][0]["path"] == "note"  # 0.254 = 25.4%
+    assert found["2.0"]["status"] == "computed"   # 36.1 - 34.1, both in the answer
+    assert found["41.7"]["status"] == "found" and "Banerjee" in found["41.7"]["quotes"][0]
+    assert found["77.7"]["status"] == "not found" and not found["77.7"]["sources"]
+    assert "2022" not in found  # years aren't numbers to trace
 
 
 def test_token_use_is_totaled_over_the_last_24_hours():

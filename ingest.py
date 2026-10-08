@@ -16,13 +16,13 @@ DOCS_DIR = Path("docs")
 DATA_DIR = Path("data")
 CHUNK_WORDS = 500
 CHUNK_OVERLAP = 50
-EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"  # see NOTES.md "Retrieval"
+EMBEDDING_MODEL = "BAAI/bge-small-en-v1.5"  # must match ask.py
 # pdfplumber is CPU-bound and single-threaded; a few processes extract PDFs in
 # parallel. Capped low because each worker holds a whole parsed PDF in memory.
 EXTRACT_WORKERS = 4
 
 
-# Two pdfplumber defaults wrecked the extracted text (see NOTES.md gotcha #4):
+# Two pdfplumber defaults wrecked the extracted text:
 # - x_tolerance=3 is too loose for tightly set papers: whole sentences came out
 #   glued ("Weshowthatintergenerationalmobility...") — 6-8% of the "words" in
 #   the Opportunity Insights papers. 1.5 splits them correctly.

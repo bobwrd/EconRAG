@@ -1,5 +1,5 @@
 """
-Local web UI (ROADMAP Phase 6): the same assistant as ask.py, in a browser.
+Local web UI: the same assistant as ask.py, in a browser.
 
     .venv/bin/python web.py            # then open http://127.0.0.1:8765
     .venv/bin/python web.py --port 9000
@@ -152,6 +152,63 @@ def data_zip(record: dict, kind: str, wb, longrun=None, gdl=None) -> bytes:
                        "tool_calls.json: the same tool calls and results, as structured JSON.", ""]
         z.writestr("README.txt", "\n".join(readme) + "\n")
     return buf.getvalue()
+
+
+def session_zip(app, session_id: int) -> bytes | None:
+    """A saved chat as one zip: chat.md (questions, answers, fact-checks, charts), chat.json (the
+    same as data), charts/, and per answer what the model saw (answer_N/). Nothing re-fetched."""
+    s = app.saved.get(session_id) if app.saved else None
+    if s is None:
+        return None
+    md = [f"# {s['title']}", "", f"*Saved chat, {s['created'].replace('T', ' ')} to {s['updated'].replace('T', ' ')}*", ""]
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        for n, a in enumerate(s["answers"], 1):
+            md += [f"## {n}. {a['question']}", "", a.get("answer", ""), ""]
+            if a.get("unverified"):
+                md.append(f"> Not found in any tool result (treat with caution): {', '.join(a['unverified'])}")
+            elif a.get("tools"):
+                md.append("> Every number and citation was found in the tool results (checked automatically).")
+            else:
+                md.append("> No data was looked up for this answer.")
+            md.append("")
+            if a.get("tools"):
+                md += ["Looked up: " + "; ".join(t.get("summary") or t["name"] for t in a["tools"]), ""]
+            for url in a.get("charts", []):
+                chart = CHARTS_DIR / Path(url).name
+                if chart.is_file():
+                    z.write(chart, f"charts/{chart.name}")
+                    md += [f"![{chart.stem}](charts/{chart.name})", ""]
+            record = app.answer(a["id"])
+            if record and record["evidence"]["results"]:
+                inner = zipfile.ZipFile(io.BytesIO(data_zip(record, "seen", None)))
+                for name in inner.namelist():
+                    z.writestr(f"answer_{n}/{name}", inner.read(name))
+                md += [f"Data: `answer_{n}/what_the_model_saw.csv`", ""]
+            if record and record.get("technical"):
+                md += ["**Technical version:**", "", record["technical"]["text"], ""]
+        z.writestr("chat.md", "\n".join(md) + "\n")
+        z.writestr("chat.json", json.dumps({k: v for k, v in s.items() if k != "pairs"}, indent=1,
+                                           ensure_ascii=False, default=str))
+        z.writestr("README.txt", "A saved chat from the Development Economics Assistant.\n\n"
+                   "chat.md: the questions and answers, with fact-check results and charts.\n"
+                   "chat.json: the same as data (answers, tools used, where each number came from).\n"
+                   "answer_N/: every value the model saw for answer N (what_the_model_saw.csv, tool_calls.json).\n"
+                   "For every year of each series, use the Download button on that answer in the web page.\n")
+    return buf.getvalue()
+
+
+# ------------------------------------------------------------------ evidence inspector (no tokens)
+def number_sources(answer: str, evidence: dict) -> list[dict]:
+    """Where each number in the answer came from (verify.locate_numbers), for click-to-see on the
+    page. Never stops an answer: on any problem the numbers just aren't clickable."""
+    if not evidence["results"] and not evidence["passages"]:
+        return []
+    try:
+        return verify.locate_numbers(answer, evidence)
+    except Exception as e:  # noqa: BLE001
+        print(f"  (couldn't trace the answer's numbers: {type(e).__name__}: {e})", flush=True)
+        return []
 
 
 # ------------------------------------------------------------------ technical view (no tokens)
@@ -367,15 +424,21 @@ class App:
         say = lambda kind, text: emit({"kind": kind, "text": text})  # noqa: E731
         write = params.get("summary", True) is not False
         text = lambda key: str(params.get(key) or "").strip()  # noqa: E731
+
+        def listed(key):  # a list, or text separated by commas
+            value = params.get(key) or []
+            items = re.split(r"[,;\n]+", value) if isinstance(value, str) else value
+            return [str(i).strip() for i in items if str(i).strip()]
         if kind == "compare":
             countries = params.get("countries") or []
             if isinstance(countries, str):
                 countries = [c for c in re.split(r"[,;\n]+", countries) if c.strip()]
-            indicators = [i for i in params.get("indicators") or [] if str(i).strip()]
-            report = workflows.compare(self.wb(), countries, params.get("topics") or None, indicators,
-                                       emit=say, write=write)
+            report = workflows.compare(self.wb(), countries, params.get("topics") or None, listed("indicators"),
+                                       emit=say, write=write, start=params.get("start"), end=params.get("end"))
         elif kind == "brief":
-            report = report_recipes.country_brief(self.wb(), text("country"), emit=say, write=write)
+            report = report_recipes.country_brief(self.wb(), text("country"), emit=say, write=write,
+                                                  start=params.get("start"), end=params.get("end"),
+                                                  indicators=listed("indicators"), peers=listed("peers"))
         elif kind == "poverty":
             report = report_recipes.poverty_profile(self.wb(), text("country"), emit=say, write=write)
         elif kind == "works":
@@ -429,7 +492,8 @@ class App:
         record.update(answer=result["answer"], result=result)
         view = {**result, "seconds": round(time.time() - started),
                 "charts": ["/charts/" + Path(p).name for p in result["charts"]],
-                "technical": technical_details(record["evidence"]["results"]), "events": events}
+                "technical": technical_details(record["evidence"]["results"]), "events": events,
+                "numbers": number_sources(result["answer"], record["evidence"])}
         return {**view, "id": self.save(record, view), "session": self.session_id}
 
 
@@ -506,6 +570,18 @@ class Handler(BaseHTTPRequestHandler):
         if url.path == "/api/sessions":
             return self._json({"sessions": self.app.saved.list() if self.app.saved else [],
                                "current": self.app.session_id, "saving": bool(self.app.saved)})
+        if url.path == "/api/sessions/export":
+            query = parse_qs(url.query)
+            try:
+                body = session_zip(self.app, int(query.get("id", [""])[0]))
+            except ValueError:
+                body = None
+            if body is None:
+                return self._json({"error": "unknown conversation"}, 404)
+            return self._send(200, body, "application/zip", {
+                "Content-Disposition": f'attachment; filename="chat{int(query["id"][0])}.zip"'})
+        if url.path == "/api/report-options":  # the drop-down lists of the report form
+            return self._json(report_recipes.options(self.app.wb()))
         if url.path == "/api/usage":  # tokens in the last 24 hours (groq_client.usage)
             return self._json(groq_client.usage())
         if url.path == "/api/report":

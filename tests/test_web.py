@@ -80,6 +80,7 @@ def test_server_streams_progress_then_the_result():
         done = events[-1]
         assert done["answer"] == "Cook is at 38.5." and done["unverified"] == [] and done["id"] == "1"
         assert done["technical"] and "Opportunity Atlas" in done["technical"][0]["source"]
+        assert done["numbers"][0]["number"] == "38.5" and done["numbers"][0]["status"] == "found"  # click-to-see
         # what the model saw, as a zip with a README
         status, body = _request(app, "GET", "/api/data?id=1&kind=seen")
         z = zipfile.ZipFile(io.BytesIO(body))
@@ -151,6 +152,13 @@ def test_saved_chats_survive_a_restart_and_can_be_continued():
         assert app.session_id == first["session"] and len(app.analyst.history) == 4  # follow-ups continue it
         status, body = _request(app, "GET", f"/api/data?id={first['id']}&kind=seen")  # reloaded from the file
         assert status == 200 and "38.5" in zipfile.ZipFile(io.BytesIO(body)).read("what_the_model_saw.csv").decode()
+        status, body = _request(app, "GET", f"/api/sessions/export?id={first['session']}")
+        z = zipfile.ZipFile(io.BytesIO(body))
+        chat = z.read("chat.md").decode()
+        assert status == 200 and {"chat.md", "chat.json", "README.txt", "answer_1/what_the_model_saw.csv"} <= set(z.namelist())
+        assert "## 1. Cook?" in chat and "## 2. And nationally?" in chat and "38.5" in chat
+        assert _request(app, "GET", "/api/sessions/export?id=999")[0] == 404
+        assert _request(app, "GET", "/api/sessions/export?id=x")[0] == 404
         _, events = _ask(app, "And Cook again?", [{"content": "Still 38.5."}])
         assert events[-1]["session"] == first["session"]
         assert _request(app, "POST", "/api/sessions/open", {"id": 999})[0] == 404

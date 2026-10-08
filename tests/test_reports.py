@@ -7,6 +7,7 @@ tokens: the summary request goes to a scripted fake. World Bank data is real
 """
 
 import csv
+import datetime
 import io
 import json
 import sys
@@ -129,8 +130,69 @@ def test_every_export_format():
     rows = list(csv.reader(io.StringIO(tables.read(first).decode("utf-8-sig"))))
     assert first.startswith("01_") and rows[0] == report["sections"][0]["table"]["columns"]
     assert rows[1:] == [[str(c) for c in r] for r in report["sections"][0]["table"]["rows"]]
+    nb = json.loads(report_export.export(report, "ipynb"))
+    assert nb["nbformat"] == 4 and nb["cells"][0]["cell_type"] == "markdown" and report["title"] in nb["cells"][0]["source"]
+    _run_notebook(nb)
     data = zipfile.ZipFile(io.BytesIO(report_export.export(report, "data", tt.WB)))
     assert {"full_series.csv", "what_the_model_saw.csv", "README.txt"} <= set(data.namelist())
+
+
+def _run_notebook(nb):
+    """Runs the notebook's code with Ask's Python (it has pandas and matplotlib; this project's
+    .venv doesn't). Skipped when Ask isn't set up."""
+    import subprocess
+    ask_python = ROOT / "vendor/ask/.venv/bin/python"
+    if not ask_python.exists():
+        print("  (notebook not run: vendor/ask/.venv missing)")
+        return
+    code = "\n".join(c["source"] for c in nb["cells"] if c["cell_type"] == "code")
+    run = subprocess.run([str(ask_python), "-c", code], capture_output=True, text=True, timeout=120,
+                         env={"MPLBACKEND": "Agg", "PATH": "/usr/bin:/bin"})
+    assert run.returncode == 0, run.stderr[-800:]
+
+
+def test_year_range_and_custom_peers():
+    assert workflows.year_range() == (datetime.date.today().year - workflows.WINDOW, None)
+    assert workflows.year_range("2000", "2010") == (2000, 2010)
+    for bad in (("1900", None), ("2010", "2000"), ("x", None)):
+        try:
+            workflows.year_range(*bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"accepted {bad}")
+    report = workflows.compare(tt.WB, ["Kenya", "Ghana"], ["health"], write=False, start=2005, end=2012)
+    years = [int(c.split("(")[1][:4]) for row in report["sections"][0]["table"]["rows"] for c in row[1:] if "(" in c]
+    assert years and all(2005 <= y <= 2012 for y in years), years
+    assert any("2005-2012" in a for a in report["about"])
+    options = rr.options(tt.WB)
+    assert "Kenya" in options["countries"] and "Sub-Saharan Africa" in options["regions"]
+    assert "Sub-Saharan Africa" not in options["countries"]  # groups aren't countries
+
+
+def test_brief_with_your_indicators_and_peer_countries():
+    saved = dict(rr._loaded)
+    rr._loaded.update(longrun=None, gdl=None, dhs=None, jpal=None, imf=None)  # only the World Bank parts
+    try:
+        report = rr.country_brief(tt.WB, "Kenya", write=False, indicators=["access to electricity"],
+                                  peers=["Tanzania", "Uganda", "Kenya"])
+    finally:
+        rr._loaded.clear()
+        rr._loaded.update(saved)
+    headings = [s["heading"] for s in report["sections"]]
+    assert "Your indicators" in headings and "Compared with your chosen peers" in headings
+    peers = next(s for s in report["sections"] if s["heading"] == "Compared with your chosen peers")
+    assert peers["table"]["columns"] == ["Indicator", "Kenya", "Tanzania", "Uganda", "Peer median"]  # Kenya once
+    life = next(r for r in peers["table"]["rows"] if r[0].startswith("Life expectancy"))
+    values = sorted(float(c.split(" ")[0]) for c in life[2:4])
+    assert float(life[4]) == round(sum(values) / 2, 1)  # median of two = their mean
+    fact = next(f for f in report["facts"]["rows"] if "peer median" in f and f["indicator"].startswith("Life"))
+    assert fact["vs peer median"] in ("higher", "lower", "the same")
+    for bad in (["World"], ["Kenya"]):
+        try:
+            rr.country_brief(tt.WB, "Kenya", write=False, peers=bad)
+        except ValueError:
+            continue
+        raise AssertionError(f"accepted peers {bad}")
 
 
 def test_web_report_endpoints():
@@ -153,6 +215,8 @@ def test_web_report_endpoints():
         status, body = test_web._request(app, "GET", f"/api/report?id={done['id']}&fmt=pdf")
         assert status == 200 and body[:5] == b"%PDF-"
         assert test_web._request(app, "GET", f"/api/report?id={done['id']}&fmt=exe")[0] == 404
+        status, body = test_web._request(app, "GET", "/api/report-options")
+        assert status == 200 and "Kenya" in json.loads(body)["countries"]
         assert test_web._request(app, "POST", "/api/report", {"kind": "compare"}, origin="https://evil.example")[0] == 403
     finally:
         workflows.compare = original

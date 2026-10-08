@@ -20,6 +20,9 @@ ROOT = Path(__file__).resolve().parent
 DATA = ROOT / "data"
 MANIFEST = DATA / "MANIFEST.json"
 
+# your own activity, not data: changes all the time, so not listed
+ACTIVITY = ("sessions.db", "usage")
+
 # first part of the path inside data/ -> (source, kind)
 SOURCES = {
     "atlas": ("Opportunity Insights, Opportunity Atlas (+ census.gov county names)", "downloaded once"),
@@ -53,7 +56,8 @@ def describe(path: Path, data: Path) -> dict:
 
 
 def scan(data: Path = DATA) -> dict:
-    files = sorted(p for p in data.rglob("*") if p.is_file() and p.name not in ("MANIFEST.json", ".DS_Store"))
+    files = sorted(p for p in data.rglob("*") if p.is_file() and p.name not in ("MANIFEST.json", ".DS_Store")
+                   and not p.relative_to(data).parts[0].startswith(ACTIVITY))
     return {str(p.relative_to(data)): describe(p, data) for p in files}
 
 

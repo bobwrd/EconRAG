@@ -4,6 +4,8 @@ Sets up your own copy of the assistant, one step at a time.
     python3 setup_assistant.py              # check what's set up (changes nothing)
     python3 setup_assistant.py install      # walk through every missing step, asking first
     python3 setup_assistant.py install papers   # run one step (names below)
+    python3 setup_assistant.py verify       # run the quick self-test (about 30 seconds)
+    python3 setup_assistant.py uninstall    # list what setup added and remove it, asking for each
 
 Every download is announced with its source and size, and needs your yes.
 Only the packages and a Groq key are needed to start; everything else adds a
@@ -31,6 +33,7 @@ ASK_PY = ASK_DIR / ".venv" / ("Scripts/python.exe" if WINDOWS else "bin/python")
 DATA = ROOT / "data"
 DOCS = ROOT / "docs"
 ENV = ROOT / ".env"
+OUTPUTS = [ROOT / "charts", ROOT / "reports"]  # made while using the assistant
 PACKAGES = ["laya", "sentence_transformers", "transformers", "torch", "pdfplumber", "dotenv", "requests", "scipy",
             "fpdf", "docx"]
 ATLAS_FILES = {
@@ -206,7 +209,7 @@ def install_atlas():
     say("Opportunity Atlas county data (opportunityinsights.org) and the Census county list (census.gov):")
     for f, (url, size) in ATLAS_FILES.items():
         say(f"  {f}: {size} from {url.split('/')[2]}")
-    if ask_yes("Download (about 3 MB)?"):
+    if ask_yes("Download (about 3 MB, a few seconds)?"):
         for f, (url, _) in ATLAS_FILES.items():
             if not (DATA / "atlas" / f).exists():
                 download(url, DATA / "atlas" / f)
@@ -225,7 +228,7 @@ def install_papers():
     if auto:
         hosts = sorted({m["url"].split("/")[2] for m in auto.values()})
         say(f"{len(auto)} open-access papers from their authors' or publishers' sites ({', '.join(hosts)}).\n"
-            "  About 115 MB if all are missing. For your own use; they aren't redistributed.")
+            "  About 115 MB if all are missing, 1-3 minutes. For your own use; they aren't redistributed.")
         if ask_yes("Download?"):
             for f, m in auto.items():
                 say(f"  {m['cite']}")
@@ -263,7 +266,8 @@ def check_models():
 
 def install_models():
     say("Downloads the models the assistant runs on this computer, from Hugging Face, and checks they load:\n"
-        "  Laya reranker/router (~1.6 GB), bge-small embeddings (~130 MB), phi3.5's tokenizer (~2 MB).\n"
+        "  Laya reranker/router (~1.6 GB), bge-small embeddings (~130 MB), phi3.5's tokenizer (~2 MB):\n"
+        "  5-15 minutes, depending on your connection.\n"
         "  Otherwise this happens the first time you start the assistant. Uses ~2.5 GB of memory briefly.")
     if ask_yes("Download?"):
         run([VENV_PY, "-c", "from concurrent.futures import ThreadPoolExecutor; import ask; "
@@ -279,7 +283,7 @@ def check_longrun():
 
 
 def install_longrun():
-    say("Maddison Project GDP per capita back to year 1, via Our World in Data (~0.6 MB, CC BY 4.0).")
+    say("Maddison Project GDP per capita back to year 1, via Our World in Data (~0.6 MB, a few seconds; CC BY 4.0).")
     if ask_yes("Download?") and download(MADDISON_URL, DATA / "longrun" / "owid_maddison_gdppc.csv"):
         run([VENV_PY, "longrun.py", "--import"])
 
@@ -334,7 +338,7 @@ def check_charts():
 
 def install_charts():
     say("Gives the bundled Ask charting language its own environment: pandas, matplotlib, geopandas\n"
-        "  from PyPI, about 300 MB.")
+        "  from PyPI, about 300 MB, 2-5 minutes.")
     if ask_yes("Install?"):
         if ASK_PY.exists() or run([sys.executable, "-m", "venv", ".venv"], cwd=ASK_DIR):
             run([ASK_PY, "-m", "pip", "install", "-e", ".[geo]"], cwd=ASK_DIR)
@@ -352,9 +356,36 @@ def install_offline():
         say("Install Ollama from https://ollama.com/download (the app starts its server),\n"
             "  then run this step again to download phi3.5.")
         return
-    say("Downloads phi3.5 (Microsoft, ~2.2 GB) through Ollama. Needs ~4 GB free memory when answering.")
+    say("Downloads phi3.5 (Microsoft, ~2.2 GB, 5-20 minutes) through Ollama. Needs ~4 GB free memory when answering.")
     if ask_yes("Download?"):
         run(["ollama", "pull", "phi3.5"])
+
+
+def check_datafiles():
+    """data/ against data/MANIFEST.json (data_manifest.py), when a list has been saved."""
+    import data_manifest
+    if not (DATA / "MANIFEST.json").exists():
+        return False, "no list yet (optional; saved after each install, or: python3 data_manifest.py)"
+    result = data_manifest.check(DATA)
+    problems = {k: v for k, v in result.items() if v and k != "changed_cache"}
+    if not problems:
+        return True, "all files match the saved list" + (
+            f" ({len(result['changed_cache'])} cache file(s) refreshed, as expected)" if result["changed_cache"] else "")
+    return False, "; ".join(f"{len(v)} {k}" for k, v in problems.items()) + " (python3 data_manifest.py --check lists them)"
+
+
+def install_datafiles():
+    say("Saves the list of data files with their checksums (data/MANIFEST.json), so later changes show up here.\n"
+        "  Local only, nothing is downloaded.")
+    if ask_yes("Save the current files as the list?"):
+        save_manifest()
+
+
+def save_manifest():
+    import data_manifest
+    if DATA.is_dir():
+        files = data_manifest.write(DATA)
+        say(f"  ✓ data/MANIFEST.json: {len(files)} files")
 
 
 def check_sandbox():
@@ -376,8 +407,74 @@ STEPS = [  # name, needed, label, check, install
     ("gdl", False, "Global Data Lab (by hand)", check_gdl, install_gdl),
     ("charts", False, "Charts (Ask)", check_charts, install_charts),
     ("offline", False, "Offline answers (Ollama)", check_offline, install_offline),
+    ("datafiles", False, "Data files unchanged", check_datafiles, install_datafiles),
     ("sandbox", False, "run_python sandbox", check_sandbox, None),
 ]
+
+
+# ------------------------------------------------------------------ verify and uninstall
+def verify() -> bool:
+    """The quick self-test (tests/run_fast.py --ci): no keys, no data files, no tokens."""
+    if not VENV_PY.exists():
+        say("No .venv yet: run the 'packages' step first.")
+        return False
+    say("Running the quick self-test (formulas, saved chats, data list, setup; about 30 seconds)...")
+    ok = run([VENV_PY, "tests/run_fast.py", "--ci"])
+    say("✓ Self-test passed." if ok else "✗ Self-test failed: see above. The 'packages' step may need re-running.")
+    return ok
+
+
+def folder_size(path: Path) -> int:
+    if path.is_file():
+        return path.stat().st_size
+    return sum(p.stat().st_size for p in path.rglob("*") if p.is_file() and not p.is_symlink())
+
+
+def removable(include_shared: bool = True) -> list[tuple[str, Path | None, str]]:
+    """What setup (and using the assistant) added: (label, path or None, note). Shared items are
+    the Hugging Face models and Ollama's phi3.5, which other programs on this computer may use."""
+    items = [(".venv (Python packages)", VENV_PY.parent.parent, ""),
+             ("Ask's .venv (charts)", ASK_PY.parent.parent, ""),
+             ("data/ (downloaded data, paper index, saved chats, token counts)", DATA, ""),
+             ("docs/ (paper PDFs)", DOCS, ""),
+             (".env (your API keys)", ENV, "you'd need to paste the keys again")]
+    items += [(f"{p.name}/ (charts and reports you made)", p, "") for p in OUTPUTS]
+    items = [i for i in items if i[1].exists()]
+    if include_shared:
+        home = Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface")) / "hub"
+        items += [(f"Hugging Face model {m}", home / ("models--" + m.replace("/", "--")),
+                   "shared: other programs using this model would download it again")
+                  for m in HF_MODELS if hf_cached(m)]
+        if ollama_has("phi3.5"):
+            items.append(("Ollama model phi3.5", None, "shared: other programs using it would download it again"))
+    return items
+
+
+def uninstall(answer=None, include_shared: bool = True) -> list[str]:
+    """Lists everything removable with its size, then asks before removing each. Returns what was removed."""
+    answer = answer or ask_yes
+    items = removable(include_shared)
+    if not items:
+        say("Nothing to remove.")
+        return []
+    say("Setup added these (this folder's code stays):\n")
+    for label, path, note in items:
+        size = f"{folder_size(path) / 1e6:,.0f} MB" if path else "~2.2 GB"
+        say(f"  {label}: {size}" + (f"  ({note})" if note else ""))
+    say("\nEach is deleted for good (not moved to the Trash). Answer y only for what you want gone.")
+    removed = []
+    for label, path, _ in items:
+        if not answer(f"Remove {label}?"):
+            continue
+        if path is None:
+            run(["ollama", "rm", "phi3.5"])
+        elif path.is_dir():
+            shutil.rmtree(path)
+        else:
+            path.unlink()
+        removed.append(label)
+        say(f"  removed {label}")
+    return removed
 
 
 def report() -> list[str]:
@@ -403,6 +500,11 @@ def main(argv: list[str]) -> int:
         say("\nNext: python3 setup_assistant.py install" if todo else
             "\nAll set. Start with:  .venv/bin/python web.py   (or ask.py for the terminal)")
         return 0
+    if argv[0] == "verify":
+        return 0 if verify() else 1
+    if argv[0] == "uninstall":
+        uninstall()
+        return 0
     if argv[0] != "install":
         say(__doc__)
         return 1
@@ -425,6 +527,10 @@ def main(argv: list[str]) -> int:
                 install()
             except KeyboardInterrupt:
                 say("\n  (skipped)")
+    if DATA.is_dir() and "datafiles" not in todo:  # the files just installed become the reference list
+        save_manifest()
+    if "packages" in todo and check_packages()[0] and ask_yes("\nRun the quick self-test (about 30 seconds)?"):
+        verify()
     say("\nDone. Run `python3 setup_assistant.py` any time to see what's set up.")
     return 0
 

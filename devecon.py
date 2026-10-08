@@ -1,5 +1,5 @@
 """
-Development-economics computations (ROADMAP Phase 2), pure Python + NumPy.
+Development-economics computations, pure Python + NumPy.
 
 Every function returns plain numbers, lists, or dicts so tools can pass results
 straight to the model and to verify.py. Conventions:

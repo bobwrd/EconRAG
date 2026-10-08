@@ -1,5 +1,5 @@
 """
-Reports people repeat (ROADMAP Phase 5). Each report is a fixed recipe:
+Reports people repeat. Each report is a fixed recipe:
 
   1. gather  — a fixed list of data calls to the existing modules (no model)
   2. compute — growth rates, ranks, gaps in Python; Python writes every table
@@ -161,10 +161,34 @@ def resolve_indicator(wb, text: str) -> str:
     return found[0]["id"]
 
 
+def year_range(start=None, end=None) -> tuple[int, int | None]:
+    """A report's years: default the last WINDOW years. Longer ranges work, but the World Bank
+    tool then samples each series (13 points), so charts show fewer years."""
+    this_year = datetime.date.today().year
+    try:
+        start = int(start) if start not in (None, "") else this_year - WINDOW
+        end = int(end) if end not in (None, "") else None
+    except (TypeError, ValueError):
+        raise ValueError("years must be whole numbers, e.g. 2000") from None
+    if not 1960 <= start <= this_year or (end is not None and not start < end <= this_year + 6):
+        raise ValueError(f"choose years between 1960 and {this_year}, the first before the last")
+    return start, end
+
+
+def years_note(start: int, end: int | None) -> list[str]:
+    """The about-line for a chosen year range (none for the default)."""
+    if end is None and start == datetime.date.today().year - WINDOW:
+        return []
+    span = f"{start}-{end}" if end else f"{start} onwards"
+    return [f"Years: {span}; values are the latest with data in that range."
+            + (" Long ranges are sampled in charts (13 points per series)." if (end or start + WINDOW) - start > WINDOW
+               else "")]
+
+
 def compare(wb, countries: list[str], topics: list[str] | None = None, indicators: list[str] | None = None,
-            emit=lambda *_: None, write: bool = True) -> dict:
-    """Report comparing 2-6 countries on topic bundles and/or extra indicators.
-    write=False: the summary is written by Python (no Groq tokens)."""
+            emit=lambda *_: None, write: bool = True, start=None, end=None) -> dict:
+    """Report comparing 2-6 countries on topic bundles and/or extra indicators, over the last
+    WINDOW years or a chosen start/end. write=False: the summary is written by Python (no Groq tokens)."""
     codes = list(dict.fromkeys(wb.country(c) for c in countries))
     if not 2 <= len(codes) <= MAX_COUNTRIES:
         raise ValueError(f"compare needs 2-{MAX_COUNTRIES} different countries (got {len(codes)})")
@@ -175,14 +199,14 @@ def compare(wb, countries: list[str], topics: list[str] | None = None, indicator
         raise ValueError(f"unknown topic(s) {unknown}; choose from {', '.join(TOPICS)}")
     plan = [(t, i) for t in topics for i in TOPICS[t]]
     plan += [("extra", resolve_indicator(wb, text)) for text in indicators or []]
-    start = datetime.date.today().year - WINDOW
+    start, end = year_range(start, end)
 
     results, sections, facts_rows, used = [], {}, [], []
     for topic, indicator in plan:
         emit("step", f"World Bank: {wb.by_id[indicator]['name']}")
-        args = {"series": indicator, "countries": codes, "start": start, "peers": True}
+        args = {"series": indicator, "countries": codes, "start": start, "end": end, "peers": True}
         try:
-            result = wb.get(indicator, codes, start, None, peers=True)
+            result = wb.get(indicator, codes, start, end, peers=True)
         except Exception as e:  # one failed indicator shouldn't sink the report
             emit("step", f"  skipped {indicator}: {e}")
             continue
@@ -220,7 +244,7 @@ def compare(wb, countries: list[str], topics: list[str] | None = None, indicator
 
     if "growth" in topics:  # average growth, constant prices, computed here
         emit("step", f"Computing average growth over the last {GROWTH_YEARS} years")
-        row, fact_values = growth_row(wb, codes, names)
+        row, fact_values = growth_row(wb, codes, names, end)
         if row:
             sections.setdefault("growth", {"rows": [], "notes": set(), "results": []})
             sections["growth"]["rows"].insert(0, row)
@@ -246,7 +270,7 @@ def compare(wb, countries: list[str], topics: list[str] | None = None, indicator
         summary = python_summary(facts, reason=summary["reason"])
     report = {
         "kind": "compare", "title": title, "created": datetime.datetime.now().isoformat(timespec="seconds"),
-        "inputs": {"countries": names, "topics": topics, "indicators": indicators or []},
+        "inputs": {"countries": names, "topics": topics, "indicators": indicators or [], "start": start, "end": end},
         "summary": summary,
         "sections": [{"heading": TOPIC_TITLES[t], "table": {"columns": ["Indicator"] + names,
                                                             "rows": s["rows"]},
@@ -256,7 +280,8 @@ def compare(wb, countries: list[str], topics: list[str] | None = None, indicator
                      for t, s in sections.items()],
         "about": ["Values are the latest year with data for each country (shown in brackets), from the World "
                   "Bank's World Development Indicators, fetched when the report was made.",
-                  "Ranks within income groups compare each country with the World Bank income group it belongs to."],
+                  "Ranks within income groups compare each country with the World Bank income group it belongs to."]
+                 + years_note(start, end),
         "sources": [{**WDI_SOURCE, "note": "Indicators: " + ", ".join(dict.fromkeys(used)),
                      "accessed": datetime.date.today().isoformat()}],
         "facts": facts,
@@ -266,12 +291,12 @@ def compare(wb, countries: list[str], topics: list[str] | None = None, indicator
     return report
 
 
-def growth_row(wb, codes: list[str], names: list[str]) -> tuple[list | None, dict]:
-    end_year = datetime.date.today().year
+def growth_row(wb, codes: list[str], names: list[str], end: int | None = None) -> tuple[list | None, dict]:
+    end_year = end or datetime.date.today().year
     data, _ = compute.fetch({"series": "NY.GDP.PCAP.KD", "countries": codes, "start": end_year - GROWTH_YEARS - 6}, wb)
     cells, facts = [], {}
     for code, name in zip(codes, names):
-        series = data.get(code, {})
+        series = {y: v for y, v in data.get(code, {}).items() if y <= end_year}
         last = max(series) if series else None
         first = last - GROWTH_YEARS if last else None
         if last and first in series and series[first] > 0 and series[last] > 0:

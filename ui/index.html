@@ -64,7 +64,7 @@
   <form id="report-form" class="report-form">
     <h2>Make a report</h2>
     <p class="muted">Python fetches every number and writes every table; the model only writes a short summary
-      (one request, fact-checked). Download it as PDF, Word, Markdown, LaTeX, or the data itself.</p>
+      (one request, fact-checked). Download it as PDF, Word, Markdown, LaTeX, JSON, CSV tables, a Jupyter notebook, or the data itself.</p>
     <fieldset>
       <legend>Report</legend>
       <div id="r-kinds" class="topics">
@@ -78,6 +78,7 @@
       <label>Countries <span class="muted">(2–6, separated by commas)</span>
         <input type="text" id="r-countries" placeholder="Kenya, Ghana, Nigeria" autocomplete="off">
       </label>
+      <select class="add-to" data-target="r-countries" aria-label="Add a country to the comparison" hidden></select>
       <fieldset>
         <legend>Topics</legend>
         <div id="r-topics" class="topics"></div>
@@ -94,6 +95,20 @@
         poverty gap, the number of poor, how old and how far apart the surveys are, peers, and income by region.</p>
       <label>Country <input type="text" id="r-country" placeholder="Kenya" autocomplete="off"></label>
     </div>
+    <div data-kind="brief" hidden>
+      <label>Your indicators <span class="muted">(optional: World Bank ids or a few words, separated by commas)</span>
+        <input type="text" id="r-brief-indicators" placeholder="access to electricity, SL.TLF.CACT.FE.ZS" autocomplete="off">
+      </label>
+      <label>Peer countries <span class="muted">(optional, up to 8: shown side by side with their median)</span>
+        <input type="text" id="r-peers" placeholder="Tanzania, Uganda, Rwanda" autocomplete="off">
+      </label>
+      <select class="add-to" data-target="r-peers" aria-label="Add a peer country" hidden></select>
+    </div>
+    <fieldset data-kind="compare brief" class="years">
+      <legend>Years <span class="muted">(optional; blank = the last 12 years)</span></legend>
+      <label>From <input type="number" id="r-start" min="1960" step="1" placeholder="2014" inputmode="numeric"></label>
+      <label>To <input type="number" id="r-end" min="1961" step="1" placeholder="latest" inputmode="numeric"></label>
+    </fieldset>
     <div data-kind="works" hidden>
       <p class="muted">Randomized evaluations from J-PAL grouped by outcome and region (their results quoted, not
         judged), reviews and meta-analyses from OpenAlex, and passages from your library. Every citation in the

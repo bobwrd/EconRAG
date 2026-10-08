@@ -126,6 +126,85 @@ def unsupported_numbers(answer: str, structured: str, passages: str) -> list[str
     return list(dict.fromkeys(missing))
 
 
+# ------------------------------------------------------------------ where each number came from
+MAX_SOURCES = 3  # tool-result places shown per number
+
+
+def _leaves(value, path=""):
+    """(path, number or text, the dict holding it) for every scalar in a tool result."""
+    if isinstance(value, dict):
+        for k, v in value.items():
+            if isinstance(v, (dict, list, tuple)):
+                yield from _leaves(v, f"{path}.{k}" if path else str(k))
+            else:
+                yield (f"{path}.{k}" if path else str(k)), v, value
+    elif isinstance(value, (list, tuple)):
+        for i, v in enumerate(value):
+            if isinstance(v, (dict, list, tuple)):
+                yield from _leaves(v, f"{path}[{i}]")
+            else:
+                yield f"{path}[{i}]", v, None
+
+
+def _context(holder: dict | None) -> dict:
+    """The labels next to a number (economy, year, series...), short."""
+    if not holder:
+        return {}
+    out = {k: v for k, v in holder.items() if isinstance(v, (str, int, float, bool)) and len(str(v)) <= 80}
+    return dict(list(out.items())[:8])
+
+
+def locate_numbers(answer: str, evidence: dict) -> list[dict]:
+    """For each number in the answer: where it appears in the tool results (tool, arguments, the
+    path inside the result and the labels next to it) or in the paper passages; else whether it
+    was computed from other numbers in the answer, or not found. The same matching as
+    unsupported_numbers (rounding allowed, 0.38 = 38%), so it agrees with the fact-check badge.
+    No model, no tokens: the web page lets you click a number to see this.
+    evidence: the analyst's evidence() (results, structured, passages)."""
+    results, passages = evidence["results"], evidence["passages"]
+    places = []  # (value, tool index, path, holder) for every number in every result
+    for t, (name, args, result) in enumerate(results):
+        for path, v, holder in _leaves(result):
+            if isinstance(v, bool):
+                continue
+            if isinstance(v, (int, float)):
+                places.append((float(v), t, path, holder))
+            elif isinstance(v, str) and len(v) < 2000:
+                places += [(n, t, path, holder) for _, n, _, _ in _numbers(v)]
+    values = np.array([p[0] for p in places]) if places else np.array([])
+    found = _numbers(answer)
+    missing = set(unsupported_numbers(answer, "\n".join(evidence["structured"]), "\n".join(passages)))
+    out, seen = [], set()
+    for raw, value, decimals, unscaled in found:
+        if raw in seen:
+            continue
+        seen.add(raw)
+        hits = []
+        targets = [(value, decimals)] + ([(unscaled, decimals)] if unscaled is not None else [])
+        targets.append((value / 100, decimals + 2))  # 38% in the answer, 0.38 in a tool result
+        for target, dec in targets if len(values) else []:
+            for i in np.nonzero(np.abs(values - target) <= 0.5 * 10.0 ** -dec + 1e-9)[0]:
+                _, t, path, holder = places[i]
+                name, args, _ = results[t]
+                hit = {"tool": name, "args": args, "path": path, "context": _context(holder)}
+                if hit not in hits:
+                    hits.append(hit)
+                if len(hits) >= MAX_SOURCES:
+                    break
+            if hits:
+                break
+        quotes = []
+        if not hits:
+            digits = re.compile(rf"(?<![\d.,]){re.escape(raw.split(' ')[0])}(?!\d)")
+            for passage in passages:
+                if m := digits.search(passage):
+                    quotes.append(passage[max(0, m.start() - 120):m.end() + 120].replace("\n", " "))
+                    break
+        status = "found" if hits or quotes else ("not found" if raw in missing else "computed")
+        out.append({"number": raw, "status": status, "sources": hits, "quotes": quotes})
+    return out
+
+
 # Data source tags the analyst is told to write: "(World Bank: SP.DYN.LE00.IN, 2024)"
 _SOURCE_TAG = re.compile(r"\((?:World Bank|FRED|Opportunity Atlas|Atlas|paper|IMF)\b[^)]*\)")
 _US_STATES = ("Alabama Alaska Arizona Arkansas California Colorado Connecticut Delaware Florida Georgia "

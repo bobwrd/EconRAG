@@ -20,11 +20,12 @@ import setup_assistant as sa  # noqa: E402  (chdirs to the project root)
 
 def _in_empty_copy(fn):
     """Runs fn with the setup script pointed at an empty folder."""
-    saved = {k: getattr(sa, k) for k in ("DATA", "DOCS", "ENV", "VENV_PY", "ASK_PY")}
+    saved = {k: getattr(sa, k) for k in ("DATA", "DOCS", "ENV", "VENV_PY", "ASK_PY", "OUTPUTS")}
     with tempfile.TemporaryDirectory() as tmp:
         tmp = Path(tmp)
         sa.DATA, sa.DOCS, sa.ENV = tmp / "data", tmp / "docs", tmp / ".env"
         sa.VENV_PY, sa.ASK_PY = tmp / ".venv/bin/python", tmp / "ask/.venv/bin/python"
+        sa.OUTPUTS = [tmp / "charts", tmp / "reports"]
         try:
             return fn(tmp)
         finally:
@@ -64,6 +65,47 @@ def test_keys_are_saved_privately_and_read_back():
         assert oct(sa.ENV.stat().st_mode)[-3:] == "600"
         assert sa.check_keys()[0]
     _in_empty_copy(check)
+
+
+def test_data_files_are_checked_against_the_saved_list():
+    def run(tmp):
+        (sa.DATA / "atlas").mkdir(parents=True)
+        (sa.DATA / "atlas" / "national_county.txt").write_text("AL,01")
+        first = sa.check_datafiles()
+        sa.save_manifest()
+        same = sa.check_datafiles()
+        (sa.DATA / "atlas" / "national_county.txt").write_text("AL,01,changed")
+        return first, same, sa.check_datafiles()
+    first, same, changed = _in_empty_copy(run)
+    assert not first[0] and "no list yet" in first[1]
+    assert same == (True, "all files match the saved list")
+    assert not changed[0] and changed[1].startswith("1 changed")
+
+
+def test_uninstall_asks_for_each_item_and_removes_only_those():
+    def run(tmp):
+        for folder in (sa.VENV_PY.parent, sa.DATA / "atlas", sa.DOCS, tmp / "charts"):
+            folder.mkdir(parents=True)
+        (sa.DATA / "atlas" / "x.csv").write_text("1" * 1000)
+        sa.ENV.write_text("GROQ_API_KEY=x\n")
+        asked = []
+        removed = sa.uninstall(lambda q: asked.append(q) or "docs/" in q or "charts/" in q, include_shared=False)
+        return asked, removed, [p.exists() for p in (sa.VENV_PY.parent.parent, sa.DATA, sa.DOCS, tmp / "charts",
+                                                    sa.ENV)]
+    asked, removed, exists = _in_empty_copy(run)
+    assert len(asked) == 5 and not any("Ask's" in q or "reports/" in q for q in asked)  # only what exists
+    assert removed == ["docs/ (paper PDFs)", "charts/ (charts and reports you made)"]
+    assert exists == [True, True, False, False, True]
+
+
+def test_verify_runs_the_no_data_tests():
+    calls, original = [], sa.run
+    sa.run = lambda cmd, cwd=sa.ROOT: calls.append(cmd) or True
+    try:
+        assert sa.verify()
+    finally:
+        sa.run = original
+    assert [str(c) for c in calls[0][1:]] == ["tests/run_fast.py", "--ci"]
 
 
 def test_every_paper_has_a_download_link():

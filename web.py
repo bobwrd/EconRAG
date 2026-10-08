@@ -10,7 +10,8 @@ refused. That matters because run_python executes model-written code — its
 sandbox is for personal use only (see compute.py).
 
 Loads the same models as ask.py (ask.load_models): run one or the other, not
-both — two copies don't fit in 8GB. One question at a time.
+both — two copies don't fit in 8GB. One question at a time. Conversations are
+saved in data/sessions.db (sessions.py) and can be reopened from "Past chats".
 Python's standard library only; the page is ui/ (HTML, JS, CSS, glossary).
 """
 
@@ -21,6 +22,7 @@ import io
 import json
 import re
 import shutil
+import sqlite3
 import sys
 import threading
 import time
@@ -35,6 +37,7 @@ import compute
 import groq_client
 import report_export
 import report_recipes
+import sessions
 import verify
 import workflows
 from groq_client import GroqUnavailable
@@ -44,7 +47,7 @@ UI_DIR = ROOT / "ui"
 CHARTS_DIR = (ROOT / charts.OUT_DIR).resolve()
 HOST = "127.0.0.1"
 PORT = 8765
-KEEP_ANSWERS = 50  # answers kept in memory for CSV downloads and technical rewrites
+KEEP_ANSWERS = 50  # answers kept in memory for CSV downloads and technical rewrites (saved ones reload)
 STATIC = {"/": ("index.html", "text/html; charset=utf-8"),
           "/app.js": ("app.js", "text/javascript; charset=utf-8"),
           "/style.css": ("style.css", "text/css; charset=utf-8"),
@@ -285,8 +288,10 @@ def status(app) -> dict:
 class App:
     """Holds the loaded models, the analyst, and recent answers."""
 
-    def __init__(self, models=None, analyst=None, pool=None, answer_locally=None, port=PORT):
+    def __init__(self, models=None, analyst=None, pool=None, answer_locally=None, port=PORT, saved=None):
         self.models, self.analyst, self.pool, self.port = models, analyst, pool, port
+        self.saved = saved  # sessions.Sessions, or None: answers then live in memory only
+        self.session_id = None  # the conversation new answers join; None = start one on the next question
         self.answer_locally = answer_locally  # (question) -> str, or None when offline isn't possible
         self.lock = threading.Lock()  # one question (or rewrite) at a time
         self.answers: dict[str, dict] = {}
@@ -296,14 +301,56 @@ class App:
         self.library = None  # report_recipes.library_search(models), made on first use; False = no library
         self.warm = None  # ask.warm_up running between questions
 
-    def store(self, record: dict, where: dict | None = None) -> str:
+    def store(self, record: dict, where: dict | None = None, rid: str | None = None) -> str:
         where = self.answers if where is None else where
-        rid = str(self.next_id)
-        self.next_id += 1
+        if rid is None:
+            # "m" ids can't collide with saved answers' ids
+            rid = ("m" if self.saved and where is self.answers else "") + str(self.next_id)
+            self.next_id += 1
         where[rid] = record
         for old in list(where)[:-KEEP_ANSWERS]:
             del where[old]
         return rid
+
+    def save(self, record: dict, view: dict) -> str:
+        """Saves an answer to the current conversation (starting one if needed); returns its id."""
+        if self.saved:
+            try:
+                if self.session_id is None:
+                    self.session_id = self.saved.new(record["question"])
+                return self.store(record, rid=str(self.saved.add(self.session_id, record, view)))
+            except sqlite3.Error as e:
+                print(f"  (couldn't save this answer: {e}; it's kept until web.py stops)", flush=True)
+        return self.store(record)
+
+    def answer(self, rid: str) -> dict | None:
+        """An answer's record: from memory, or reloaded from a saved conversation."""
+        record = self.answers.get(rid)
+        if record is None and self.saved and rid.isdigit():
+            record = self.saved.record(int(rid))
+            if record is not None:
+                self.store(record, rid=rid)
+        return record
+
+    def open_session(self, session_id: int) -> dict | None:
+        """Makes a saved conversation the current one: its answers for the page, and its last
+        questions as the analyst's memory, so follow-ups continue it."""
+        s = self.saved.get(session_id) if self.saved else None
+        if s is None:
+            return None
+        self.session_id = session_id
+        if self.analyst:
+            self.analyst.history = []
+            for question, answer in s.pop("pairs"):
+                self.analyst.remember(question, answer)  # keeps only the last few
+        else:
+            s.pop("pairs")
+        return s
+
+    def new_conversation(self):
+        self.session_id = None
+        if self.analyst:
+            self.analyst.history = []
 
     def wb(self):
         """The World Bank client already loaded for the analyst, or a new one (reports work without Groq)."""
@@ -346,6 +393,11 @@ class App:
         if self.warm:
             self.warm.result()
         started = time.time()
+        events = []  # the progress trail, saved so a reopened answer shows it too
+
+        def emit(event: dict, send=emit):
+            events.append(event)
+            send(event)
         record = {"question": question, "asked": datetime.datetime.now().isoformat(timespec="seconds"),
                   "evidence": {"structured": [], "passages": [], "sources": set(), "results": []}}
         result = None
@@ -375,10 +427,10 @@ class App:
             from ask import warm_up
             self.warm = self.pool.submit(warm_up, self.models.agent, self.models.model)
         record.update(answer=result["answer"], result=result)
-        rid = self.store(record)
-        return {**result, "id": rid, "seconds": round(time.time() - started),
+        view = {**result, "seconds": round(time.time() - started),
                 "charts": ["/charts/" + Path(p).name for p in result["charts"]],
-                "technical": technical_details(record["evidence"]["results"])}
+                "technical": technical_details(record["evidence"]["results"]), "events": events}
+        return {**view, "id": self.save(record, view), "session": self.session_id}
 
 
 def report_view(report: dict, rid: str) -> dict:
@@ -451,6 +503,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, b"not found", "text/plain")
         if url.path == "/api/status":
             return self._json(status(self.app))
+        if url.path == "/api/sessions":
+            return self._json({"sessions": self.app.saved.list() if self.app.saved else [],
+                               "current": self.app.session_id, "saving": bool(self.app.saved)})
         if url.path == "/api/usage":  # tokens in the last 24 hours (groq_client.usage)
             return self._json(groq_client.usage())
         if url.path == "/api/report":
@@ -465,7 +520,7 @@ class Handler(BaseHTTPRequestHandler):
                               {"Content-Disposition": f'attachment; filename="{filename}"'})
         if url.path == "/api/data":
             query = parse_qs(url.query)
-            record = self.app.answers.get(query.get("id", [""])[0])
+            record = self.app.answer(query.get("id", [""])[0])
             kind = query.get("kind", ["both"])[0]
             if not record or kind not in ("full", "seen", "both"):
                 return self._json({"error": "unknown answer or kind"}, 404)
@@ -487,22 +542,43 @@ class Handler(BaseHTTPRequestHandler):
             return self._stream(lambda emit: self.app.report(params, emit), f"Report: {params.get('kind')} "
                                 f"{params.get('countries') or params.get('country') or params.get('intervention')}")
         if path == "/api/technical":
-            record = self.app.answers.get(str(self._body().get("id")))
+            rid = str(self._body().get("id"))
+            record = self.app.answer(rid)
             if not record or not record["evidence"]["results"]:
                 return self._json({"error": "This answer used no tools, so there's nothing to rewrite from."}, 400)
             if not self.app.lock.acquire(blocking=False):
                 return self._json({"error": "Busy with another question — try again when it finishes."}, 409)
             try:
-                record["technical"] = record.get("technical") or rewrite_technical(record)
+                if not record.get("technical"):
+                    record["technical"] = rewrite_technical(record)
+                    if self.app.saved and rid.isdigit():
+                        self.app.saved.update_record(int(rid), record)
                 return self._json(record["technical"])
             except GroqUnavailable as e:
                 return self._json({"error": f"Groq unavailable: {e}"}, 503)
             finally:
                 self.app.lock.release()
         if path == "/api/reset":
-            if self.app.analyst:
-                self.app.analyst.history = []
+            self.app.new_conversation()
             return self._json({"ok": True})
+        if path in ("/api/sessions/open", "/api/sessions/delete"):
+            try:
+                session_id = int(self._body().get("id"))
+            except (TypeError, ValueError):
+                return self._json({"error": "unknown conversation"}, 404)
+            if not self.app.lock.acquire(blocking=False):  # not while a question changes the current one
+                return self._json({"error": "Busy with another question — try again when it finishes."}, 409)
+            try:
+                if path.endswith("open"):
+                    s = self.app.open_session(session_id)
+                    return self._json(s) if s else self._json({"error": "unknown conversation"}, 404)
+                if not (self.app.saved and self.app.saved.delete(session_id)):
+                    return self._json({"error": "unknown conversation"}, 404)
+                if self.app.session_id == session_id:
+                    self.app.new_conversation()
+                return self._json({"ok": True})
+            finally:
+                self.app.lock.release()
         self._send(404, b"not found", "text/plain")
 
     def _ask(self, question: str):
@@ -563,8 +639,13 @@ def main():
     import ask  # heavy imports (torch, transformers) only when actually serving
     pool = ThreadPoolExecutor(max_workers=4)
     models = ask.load_models(pool)
+    try:
+        saved = sessions.Sessions()
+    except sqlite3.Error as e:
+        print(f"Saved conversations are off ({e}): answers are kept until web.py stops.", flush=True)
+        saved = None
     app = App(models, ask.make_analyst(models), pool,
-              lambda q: ask.answer_locally(q, models, pool), port)
+              lambda q: ask.answer_locally(q, models, pool), port, saved)
     app.warm = pool.submit(ask.warm_up, models.agent, models.model)
     try:
         serve(app, port)

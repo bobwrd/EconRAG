@@ -44,7 +44,8 @@ multi-column PDF extraction) is merged into `main` and was benchmarked on Oct 7 
 
 Next: packaging, saved sessions and report extras are planned in `new-roadmap.md` (testing/CI,
 logging, data management, contributor docs and security were dropped from it Oct 9). Done Oct 9 (`pyproject.toml`, `tests/run_fast.py` + GitHub Actions,
-`data_manifest.py`, `SECURITY.md`). Also done Oct 9: token use against Groq's daily cap, JSON/CSV report exports.
+`data_manifest.py`, `SECURITY.md`). Also done Oct 9: token use against Groq's daily cap, JSON/CSV report exports, saved chats
+("Past chats" in the web page, `sessions.py`).
 
 ## Phase 0: Measure cheaply
 

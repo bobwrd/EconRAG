@@ -314,7 +314,7 @@ async function ask(question) {
         buf = buf.slice(nl + 1);
         if (!line) continue;
         const ev = JSON.parse(line);
-        if (ev.kind === "done") { working.remove(); showResult(card, ev); loadUsage(); }
+        if (ev.kind === "done") { working.remove(); showResult(card, ev); loadUsage(); if (!$("#sessions").hidden) loadSessions(); }
         else if (ev.kind === "error") throw new Error(ev.text);
         else { addStep(steps, ev); steps.append(working); }
       }
@@ -501,6 +501,64 @@ async function loadUsage() {
   } catch (e) { /* the page still works */ }
 }
 
+// ------------------------------------------------------------ past chats (sessions.py)
+async function loadSessions() {
+  try {
+    const r = await (await fetch("/api/sessions")).json();
+    const list = $("#sessions-list");
+    if (!r.saving) { list.innerHTML = '<li class="muted">Saving is off on this computer.</li>'; return; }
+    if (!r.sessions.length) { list.innerHTML = '<li class="muted">No saved chats yet.</li>'; return; }
+    list.innerHTML = r.sessions.map(s =>
+      `<li class="${s.id === r.current ? "current" : ""}"><button type="button" class="open" data-id="${s.id}">` +
+      `${esc(s.title)}<span class="when">${esc(s.updated.replace("T", " ").slice(0, 16))} · ` +
+      `${s.answers} answer${s.answers === 1 ? "" : "s"}</span></button>` +
+      `<button type="button" class="ghost del" data-id="${s.id}" aria-label="Delete this chat">Delete</button></li>`).join("");
+  } catch (e) { /* the page still works */ }
+}
+
+function clearLog() {
+  $("#intro")?.remove();
+  for (const el of document.querySelectorAll("#log > .turn, #log > .divider")) el.remove();
+}
+
+async function openSession(id) {
+  if (busy) return;
+  const res = await fetch("/api/sessions/open", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({id})});
+  const s = await res.json();
+  if (!res.ok) { alert(s.error || res.statusText); return; }
+  clearLog();
+  const note = document.createElement("p");
+  note.className = "divider";
+  note.textContent = `Saved chat from ${s.created.replace("T", " ").slice(0, 16)} — follow-up questions continue it`;
+  $("#log").append(note);
+  for (const a of s.answers) {
+    const card = $("#answer-tpl").content.firstElementChild.cloneNode(true);
+    $(".q", card).textContent = a.question;
+    const steps = $(".progress", card);
+    for (const ev of a.events || []) addStep(steps, ev);
+    $("#log").append(card);
+    showResult(card, a);
+  }
+  setMode("chat");
+  showSessions(false);
+  $("#log").lastElementChild?.scrollIntoView({block: "start"});
+}
+
+async function deleteSession(id, title) {
+  if (busy || !confirm(`Delete the saved chat "${title}"? This can't be undone.`)) return;
+  const res = await fetch("/api/sessions/delete", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({id})});
+  if (!res.ok) { alert((await res.json()).error || res.statusText); return; }
+  loadSessions();
+}
+
+function showSessions(show) {
+  $("#sessions").hidden = !show;
+  $("#sessions-btn").setAttribute("aria-expanded", String(show));
+  if (show) loadSessions();
+}
+
 function toggle(id) {
   for (const p of ["setup", "glossary"]) $("#" + p).hidden = p === id ? !$("#" + p).hidden : true;
 }
@@ -517,6 +575,15 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#examples").addEventListener("click", e => { if (e.target.tagName === "BUTTON") ask(e.target.textContent); });
   $("#glossary-btn").addEventListener("click", () => toggle("glossary"));
   $("#setup-btn").addEventListener("click", () => toggle("setup"));
+  $("#sessions-btn").addEventListener("click", () => showSessions($("#sessions").hidden));
+  $("#sessions-close").addEventListener("click", () => showSessions(false));
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#sessions").hidden) showSessions(false); });
+  $("#sessions-list").addEventListener("click", e => {
+    const b = e.target.closest("button");
+    if (!b) return;
+    if (b.classList.contains("del")) deleteSession(Number(b.dataset.id), b.previousElementSibling.firstChild.textContent);
+    else openSession(Number(b.dataset.id));
+  });
   $("#glossary-filter").addEventListener("input", e => {
     const f = e.target.value.toLowerCase();
     for (const dt of $("#glossary-list").querySelectorAll("dt")) {
@@ -530,7 +597,7 @@ document.addEventListener("DOMContentLoaded", () => {
     for (const t of document.querySelectorAll(".turn")) t.classList.add("old");
     const note = document.createElement("p");
     note.className = "divider";
-    note.textContent = "New conversation — earlier questions are forgotten";
+    note.textContent = "New conversation — follow-ups start fresh (earlier chats are under Past chats)";
     $("#log").append(note);
   });
   document.querySelectorAll(".modes button").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));

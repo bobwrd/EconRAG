@@ -17,7 +17,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 
-NO_DATA = ["test_devecon", "test_manifest", "test_setup"]  # formulas; temp folders only
+NO_DATA = ["test_devecon", "test_manifest", "test_sessions", "test_setup"]  # formulas; temp folders only
 NEEDS_DATA = ["test_compute", "test_tools", "test_web", "test_reports"]  # data/ files, World Bank/FRED
 
 

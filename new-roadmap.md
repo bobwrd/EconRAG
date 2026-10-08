@@ -71,18 +71,22 @@ Keep answers across restarts and compare them.
 
 **Status:** Partly there
 - ✅ Each answer shows the tool trail, fact-check badge, charts, a Plain/Technical toggle and data download
-- ✅ Answers are kept in memory (last 50) while web.py runs
-- ❌ Lost when web.py stops
+- ✅ Chats are saved in `data/sessions.db` and reopened from "Past chats" (Oct 9)
 - ❌ No comparison between answers
 
 ### Tasks
 
-#### 5.1 Session storage
-- [ ] SQLite (built into Python, nothing to install): sessions, questions, answers, tool results
-- [ ] "Recent sessions" list on start
+#### 5.1 Session storage ✅ (Oct 9)
+- [x] `sessions.py`: SQLite (built into Python, nothing installed) in `data/sessions.db`. Every answer is
+  saved with what the page shows (answer, fact-check, charts, tool trail) and what downloads and the
+  technical rewrite need (tool results, evidence). A conversation starts with its first question
+  and ends with "New conversation"
+- [x] Answer downloads and technical rewrites work after a restart (reloaded from the file); a
+  technical rewrite is saved, so it's never paid for twice
 
-#### 5.2 Session UI
-- [ ] Sidebar of past sessions; reopen one
+#### 5.2 Session UI ✅ (Oct 9, apart from export)
+- [x] "Past chats" drawer: most recent first, with date and number of answers; open one to read it,
+  and follow-up questions continue it (the analyst gets its last questions back); delete one (asks first)
 - [ ] "Export session" (zip)
 
 #### 5.3 Evidence inspector
@@ -133,11 +137,11 @@ Build on the existing reports.
 ### Done ✅ (Oct 9)
 1. `pyproject.toml` (1.1)
 2. JSON/CSV report export (6.2)
+3. Saved chats and the Past chats drawer (5.1-5.2)
 
 ### Next
-3. Sessions in SQLite and the session sidebar (5.1-5.2)
 4. Small setup and README items (1.2-1.4)
-5. Evidence inspector, comparison and re-run (5.3-5.5)
+5. Evidence inspector, comparison, re-run and session export (5.2-5.5)
 6. Report presets and customization (6.1, 6.3)
 
 ---
@@ -145,7 +149,7 @@ Build on the existing reports.
 ## Success Criteria
 
 - **Phase 1**: `pip install -e .` gives the four `econrag-*` commands
-- **Phase 5**: past answers survive a restart and can be compared
+- **Phase 5**: past answers survive a restart (done) and can be compared
 - **Phase 6**: reports also export as JSON and CSV (done); saved presets and custom peer groups
 
 ---

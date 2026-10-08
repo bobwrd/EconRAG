@@ -111,7 +111,8 @@ need no setup. Free tiers: Groq allows about 15 questions a day; OpenAlex about 
 ## Use
 
 ```bash
-.venv/bin/python web.py                          # web page at http://127.0.0.1:8765 (this computer only)
+.venv/bin/python web.py                          # web page at http://127.0.0.1:8765 (this computer only;
+                                                 # chats are saved: "Past chats" reopens them)
 .venv/bin/python ask.py                          # or ask questions in the terminal
 .venv/bin/python workflows.py compare Kenya Ghana Nigeria   # a report: PDF, Word, Markdown, LaTeX, data
 .venv/bin/python workflows.py brief Kenya                    # country brief
@@ -135,6 +136,7 @@ need no setup. Free tiers: Groq allows about 15 questions a day; OpenAlex about 
 .venv/bin/python tests/test_reports.py           # reports (World Bank data, no API usage)
 .venv/bin/python tests/test_imf.py               # IMF World Economic Outlook (live data)
 .venv/bin/python tests/test_manifest.py          # data file list
+.venv/bin/python tests/test_sessions.py          # saved chats
 
 .venv/bin/python eval/benchmark.py run NAME                # 45-question benchmark (resumable;
                                                            # ~2 days of Groq's free tier)

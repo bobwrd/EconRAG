@@ -19,11 +19,21 @@
       <button type="button" role="tab" class="on" data-mode="chat">Chat</button>
       <button type="button" role="tab" data-mode="reports">Reports</button>
     </div>
+    <button type="button" id="sessions-btn" class="ghost" aria-controls="sessions" aria-expanded="false">Past chats</button>
     <button type="button" id="glossary-btn" class="ghost">Glossary</button>
     <button type="button" id="setup-btn" class="ghost">Setup</button>
     <button type="button" id="reset-btn" class="ghost" title="Forget earlier questions (follow-ups use the last two)">New conversation</button>
   </nav>
 </header>
+
+<aside id="sessions" class="drawer" hidden aria-label="Past chats">
+  <div class="drawer-head">
+    <h2>Past chats</h2>
+    <button type="button" id="sessions-close" class="ghost" aria-label="Close">✕</button>
+  </div>
+  <p class="muted">Saved on this computer. Open one to read it or ask follow-ups.</p>
+  <ul id="sessions-list"></ul>
+</aside>
 
 <aside id="setup" class="panel" hidden>
   <h2>What's set up on this computer</h2>

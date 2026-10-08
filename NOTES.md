@@ -159,6 +159,13 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
   ~4K tokens, its own short prompt, fact-checked), data zip (full series re-read via
   `compute.fetch`, what the model saw, or both). Glossary: hand-written `ui/glossary.json`.
   One question at a time; answers kept in memory (last 50). Tests: `tests/test_web.py`.
+  Saved chats (Oct 9 2026, `sessions.py`): every answer goes to SQLite `data/sessions.db` (page view +
+  record with tool results; evidence `sources` stored as a list). A conversation starts at its first
+  question, ends at "New conversation". "Past chats" drawer: `GET /api/sessions`, `POST
+  /api/sessions/open` (also refills the analyst's follow-up memory) and `/api/sessions/delete` (both
+  refuse while a question runs). Saved answers' ids are the database ids, so downloads and rewrites
+  work after a restart (`App.answer` reloads them); unsaved ids start with "m". If the database
+  can't open, saving is off and everything else works. No size limit yet. Tests: `tests/test_sessions.py`.
 - `workflows.py` + `report_export.py` — reports (Phase 5). A fixed Python recipe gathers the data
   (no model), Python computes and writes every table, then ONE Groq request without tools writes a
   150-250 word summary from a compact fact sheet (~2-5K tokens; a chat question is 10-30K);

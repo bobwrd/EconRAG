@@ -49,7 +49,7 @@ econrag-report = "workflows:cli"
 py-modules = [
     "analyst", "ask", "atlas", "bm25", "charts", "compute", "data_manifest", "devecon", "dhs",
     "fred", "gdl", "groq_client", "imf", "ingest", "jpal", "longrun", "openalex",
-    "report_export", "report_recipes", "setup_assistant", "verify", "web", "workflows",
+    "report_export", "report_recipes", "sessions", "setup_assistant", "verify", "web", "workflows",
     "worldbank",
 ]
 

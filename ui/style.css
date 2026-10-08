@@ -80,6 +80,24 @@ nav { display: flex; gap: 6px; flex-wrap: wrap; }
 #glossary-list dt { font-weight: 600; margin-top: 10px; }
 #glossary-list dd { margin: 2px 0 0; color: var(--muted); }
 
+.drawer {
+  position: fixed; z-index: 10; top: 0; left: 0; bottom: 0; width: min(340px, 100%);
+  background: var(--paper); border-right: 1px solid var(--line); box-shadow: var(--shadow);
+  padding: 14px 16px; overflow: auto;
+}
+.drawer-head { display: flex; align-items: center; justify-content: space-between; }
+.drawer h2 { font-size: 1rem; margin: 0; }
+.drawer > .muted { margin: 4px 0 12px; }
+#sessions-list { list-style: none; padding: 0; margin: 0; }
+#sessions-list li { display: flex; gap: 6px; align-items: flex-start; border-bottom: 1px solid var(--line); }
+#sessions-list .open {
+  flex: 1; text-align: left; background: transparent; border: 0; padding: 9px 4px; border-radius: 8px;
+}
+#sessions-list .open:hover { background: var(--bg); }
+#sessions-list .current .open { font-weight: 600; }
+#sessions-list .when { display: block; font-size: 0.8rem; color: var(--muted); font-weight: 400; }
+#sessions-list .del { margin-top: 8px; font-size: 0.8rem; padding: 2px 8px; }
+
 main, #reports-view { flex: 1; width: min(860px, calc(100% - 32px)); margin: 0 auto; padding: 20px 0 140px; }
 .intro p { color: var(--muted); max-width: 60ch; }
 .examples { display: flex; flex-wrap: wrap; gap: 8px; }

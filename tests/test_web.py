@@ -122,6 +122,47 @@ def test_usage_endpoint_reports_the_last_24_hours():
         server.shutdown()
 
 
+def test_saved_chats_survive_a_restart_and_can_be_continued():
+    import tempfile
+    import sessions
+    path = Path(tempfile.mkdtemp()) / "sessions.db"
+    app, server = _serve(tt._bot())
+    app.saved = sessions.Sessions(path)
+    try:
+        _, events = _ask(app, "Cook?", [COOK, {"content": "Cook is at 38.5."}])
+        first = events[-1]
+        _, events = _ask(app, "And nationally?", [{"content": "Cook is at 38.5; the national figure is lower."}])
+        assert first["id"].isdigit() and events[-1]["session"] == first["session"]
+        _request(app, "POST", "/api/reset")
+        _, events = _ask(app, "Wayne?", [{"content": "No data looked up."}])
+        assert events[-1]["session"] != first["session"]
+    finally:
+        server.shutdown()
+    app, server = _serve(tt._bot())  # web.py restarted: nothing in memory
+    app.saved = sessions.Sessions(path)
+    try:
+        listed = json.loads(_request(app, "GET", "/api/sessions")[1])
+        assert listed["saving"] and [s["answers"] for s in listed["sessions"]] == [1, 2]
+        assert listed["sessions"][1]["title"] == "Cook?" and listed["current"] is None
+        status, body = _request(app, "POST", "/api/sessions/open", {"id": first["session"]})
+        s = json.loads(body)
+        assert status == 200 and [a["question"] for a in s["answers"]] == ["Cook?", "And nationally?"]
+        assert s["answers"][0]["events"][0]["kind"] == "tool" and s["answers"][0]["id"] == first["id"]
+        assert app.session_id == first["session"] and len(app.analyst.history) == 4  # follow-ups continue it
+        status, body = _request(app, "GET", f"/api/data?id={first['id']}&kind=seen")  # reloaded from the file
+        assert status == 200 and "38.5" in zipfile.ZipFile(io.BytesIO(body)).read("what_the_model_saw.csv").decode()
+        _, events = _ask(app, "And Cook again?", [{"content": "Still 38.5."}])
+        assert events[-1]["session"] == first["session"]
+        assert _request(app, "POST", "/api/sessions/open", {"id": 999})[0] == 404
+        assert _request(app, "POST", "/api/sessions/delete", {"id": first["session"]}, origin="https://evil.example")[0] == 403
+        assert _request(app, "POST", "/api/sessions/delete", {"id": first["session"]})[0] == 200
+        assert app.session_id is None and app.analyst.history == []
+        assert _request(app, "POST", "/api/sessions/delete", {"id": first["session"]})[0] == 404
+        assert len(json.loads(_request(app, "GET", "/api/sessions")[1])["sessions"]) == 1
+    finally:
+        server.shutdown()
+
+
 def test_full_series_specs():
     results = [("get_data", {"series": "SI.POV.DDAY", "countries": ["all"]}, {"ranked": []}),
                ("get_data", {"series": "lifexp", "source": "gdl", "countries": ["Kenya"]}, {}),

@@ -352,7 +352,7 @@ async function ask(question) {
   if (busy || !question.trim()) return;
   busy = true;
   $("#send").disabled = true;
-  $("#intro")?.remove();
+  $("#intro").hidden = true;
   const card = $("#answer-tpl").content.firstElementChild.cloneNode(true);
   $(".q", card).textContent = question;
   const steps = $(".progress", card);
@@ -632,9 +632,20 @@ async function loadSessions() {
   } catch (e) { /* the page still works */ }
 }
 
-function clearLog() {
-  $("#intro")?.remove();
+function clearLog(showIntro = false) {
+  $("#intro").hidden = !showIntro;
   for (const el of document.querySelectorAll("#log > .turn, #log > .divider")) el.remove();
+}
+
+// A new chat: an empty page with the examples, and the server forgets the earlier questions
+// (the earlier chat stays saved under Past chats)
+async function newChat() {
+  if (busy) return;
+  await fetch("/api/reset", {method: "POST"});
+  clearLog(true);
+  setMode("chat");
+  if (!$("#sessions").hidden) loadSessions();
+  $("#question").focus();
 }
 
 async function openSession(id) {
@@ -657,22 +668,38 @@ async function openSession(id) {
     showResult(card, a);
   }
   setMode("chat");
-  showSessions(false);
+  if (!WIDE.matches) showSessions(false, false);  // a docked sidebar stays open
+  loadSessions();
   $("#log").lastElementChild?.scrollIntoView({block: "start"});
 }
 
-async function deleteSession(id, title) {
+async function deleteSession(id, title, current) {
   if (busy || !confirm(`Delete the saved chat "${title}"? This can't be undone.`)) return;
   const res = await fetch("/api/sessions/delete", {method: "POST", headers: {"Content-Type": "application/json"},
     body: JSON.stringify({id})});
   if (!res.ok) { alert((await res.json()).error || res.statusText); return; }
+  if (current) clearLog(true);  // the chat on screen was deleted
   loadSessions();
 }
 
-function showSessions(show) {
+// Past chats: a sidebar beside the chat on wide screens (open unless you closed it last time),
+// a drawer over it on narrow ones (closed until opened)
+const WIDE = window.matchMedia("(min-width: 900px)");
+
+function showSessions(show, remember = true) {
   $("#sessions").hidden = !show;
   $("#sessions-btn").setAttribute("aria-expanded", String(show));
+  document.body.classList.toggle("docked", show && WIDE.matches);
+  if (remember && WIDE.matches) {
+    try { localStorage.setItem("sessionsOpen", show ? "1" : "0"); } catch (e) { /* private window */ }
+  }
   if (show) loadSessions();
+}
+
+function sidebarDefault() {
+  let saved = null;
+  try { saved = localStorage.getItem("sessionsOpen"); } catch (e) { /* private window */ }
+  showSessions(WIDE.matches && saved !== "0", false);
 }
 
 function toggle(id) {
@@ -693,11 +720,17 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#setup-btn").addEventListener("click", () => toggle("setup"));
   $("#sessions-btn").addEventListener("click", () => showSessions($("#sessions").hidden));
   $("#sessions-close").addEventListener("click", () => showSessions(false));
-  document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#sessions").hidden) showSessions(false); });
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && !$("#sessions").hidden && !WIDE.matches) showSessions(false);
+  });
+  sidebarDefault();
+  WIDE.addEventListener("change", sidebarDefault);
   $("#sessions-list").addEventListener("click", e => {
     const b = e.target.closest("button");
     if (!b) return;
-    if (b.classList.contains("del")) deleteSession(Number(b.dataset.id), b.closest("li").querySelector(".open").firstChild.textContent);
+    const li = b.closest("li");
+    if (b.classList.contains("del")) deleteSession(Number(b.dataset.id), li.querySelector(".open").firstChild.textContent,
+                                                   li.classList.contains("current"));
     else openSession(Number(b.dataset.id));
   });
   $("#glossary-filter").addEventListener("input", e => {
@@ -707,15 +740,7 @@ document.addEventListener("DOMContentLoaded", () => {
       dt.hidden = dt.nextElementSibling.hidden = !show;
     }
   });
-  $("#reset-btn").addEventListener("click", async () => {
-    if (busy) return;
-    await fetch("/api/reset", {method: "POST"});
-    for (const t of document.querySelectorAll(".turn")) t.classList.add("old");
-    const note = document.createElement("p");
-    note.className = "divider";
-    note.textContent = "New conversation — follow-ups start fresh (earlier chats are under Past chats)";
-    $("#log").append(note);
-  });
+  $("#reset-btn").addEventListener("click", newChat);
   document.querySelectorAll(".modes button").forEach(b => b.addEventListener("click", () => setMode(b.dataset.mode)));
   $("#report-form").addEventListener("submit", e => { e.preventDefault(); makeReport(); });
   document.querySelectorAll("input[name=r-kind]").forEach(i => i.addEventListener("change", showReportKind));

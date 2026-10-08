@@ -111,6 +111,12 @@ nav { display: flex; gap: 6px; flex-wrap: wrap; }
   padding: 14px 16px; overflow: auto;
 }
 .drawer-head { display: flex; align-items: center; justify-content: space-between; }
+@media (min-width: 900px) {  /* docked beside the chat instead of over it */
+  :root { --side-w: 300px; }
+  .drawer { width: var(--side-w); box-shadow: none; z-index: 6; }
+  body.docked { padding-left: var(--side-w); }
+  body.docked .composer { left: var(--side-w); }
+}
 .drawer h2 { font-size: 1rem; margin: 0; }
 .drawer > .muted { margin: 4px 0 12px; }
 #sessions-list { list-style: none; padding: 0; margin: 0; }
@@ -133,7 +139,6 @@ main, #reports-view { flex: 1; width: min(860px, calc(100% - 32px)); margin: 0 a
 .examples button:hover { border-color: var(--accent); }
 
 .turn { margin: 0 0 28px; }
-.turn.old { opacity: .6; }
 .q {
   margin: 0 0 10px auto; width: fit-content; max-width: 85%;
   background: var(--accent); color: var(--accent-ink); padding: 8px 14px; border-radius: 14px 14px 4px 14px;

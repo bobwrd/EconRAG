@@ -296,6 +296,10 @@ def _with_newest_fred(stats: dict, args: dict) -> dict:
     return stats
 
 
+class Stopped(Exception):
+    """The user pressed Stop (web.py): run() ends before its next Groq request or tool call."""
+
+
 class Analyst:
     def __init__(self, search_papers, atlas: Atlas | None = None, wb: "worldbank.WorldBank | None" = None):
         """search_papers(query, exclude) -> (context_text, [source filenames],
@@ -315,8 +319,14 @@ class Analyst:
         self.last_result: dict = {}  # structured copy of the latest run(), for the web UI
         # on_event(kind, text, **data): where progress goes; None prints to the terminal (ask.py)
         self.on_event = None
+        # should_stop() -> True ends run() at the next step (web.py's Stop button); None = never
+        self.should_stop = None
         self._tools_chars = len(json.dumps(TOOLS))
         self._reset_evidence()
+
+    def _stop_point(self):
+        if self.should_stop and self.should_stop():
+            raise Stopped()
 
     def _emit(self, kind: str, text: str, **data):
         """Progress for the user: printed (ask.py) or handed to on_event (web.py)."""
@@ -483,6 +493,7 @@ class Analyst:
     def _post(self, payload: dict) -> dict:
         self._fit(payload["messages"])
         for _ in range(3):
+            self._stop_point()
             try:
                 response = groq_post(payload).json()
                 self.last_tokens += response.get("usage", {}).get("total_tokens", 0)
@@ -492,7 +503,10 @@ class Analyst:
                     raise
                 self._emit("wait", f"  (Groq free-tier rate limit — waiting {e.retry_after:.0f}s)",
                            seconds=e.retry_after)
-                time.sleep(e.retry_after + 0.5)
+                until = time.time() + e.retry_after + 0.5
+                while time.time() < until:  # in short naps, so Stop doesn't wait a minute
+                    self._stop_point()
+                    time.sleep(min(1.0, max(0.0, until - time.time())))
         return groq_post(payload).json()
 
     def _check(self, answer: str) -> tuple[list[str], list[str]]:
@@ -568,6 +582,7 @@ class Analyst:
                 return answer
             messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls})
             for call in calls:
+                self._stop_point()
                 name = call["function"]["name"]
                 try:
                     args = json.loads(call["function"]["arguments"] or "{}")

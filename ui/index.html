@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Development Economics Assistant</title>
+<script src="/theme.js"></script>
 <link rel="stylesheet" href="/style.css">
 <script src="/app.js" defer></script>
 </head>
@@ -11,18 +12,42 @@
 <header class="top">
   <div class="brand">
     <h1>Development Economics Assistant</h1>
-    <p class="local" id="local">Running on this computer only — other computers can't connect.</p>
-    <p class="usage" id="usage" hidden></p>
+    <span class="usage" id="usage" hidden></span>
   </div>
   <nav>
     <div class="seg modes" role="tablist" aria-label="Mode">
       <button type="button" role="tab" class="on" data-mode="chat">Chat</button>
       <button type="button" role="tab" data-mode="reports">Reports</button>
     </div>
-    <button type="button" id="sessions-btn" class="ghost" aria-controls="sessions" aria-expanded="false">Past chats</button>
-    <button type="button" id="glossary-btn" class="ghost">Glossary</button>
-    <button type="button" id="setup-btn" class="ghost">Setup</button>
-    <button type="button" id="reset-btn" class="ghost" title="Start an empty chat; this one stays under Past chats">New chat</button>
+    <button type="button" id="sessions-btn" class="ghost" aria-controls="sessions" aria-expanded="false" title="Past chats (⌘/Ctrl+B)"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="label">Past chats</span></button>
+    <button type="button" id="reset-btn" class="ghost" title="New chat (⌘/Ctrl+K): this one stays under Past chats"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="label">New chat</span></button>
+    <div class="menu-wrap">
+      <button type="button" id="menu-btn" class="ghost" aria-haspopup="true" aria-expanded="false" aria-controls="menu" title="Settings and help"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/></svg><span class="label">Settings</span></button>
+      <div id="menu" class="menu" hidden>
+        <button type="button" class="menu-item" id="glossary-btn"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5h6a2 2 0 0 1 2 2v13a2 2 0 0 0-2-2H4zM20 5h-6a2 2 0 0 0-2 2v13a2 2 0 0 1 2-2h6z"/></svg>Glossary</button>
+        <button type="button" class="menu-item" id="setup-btn"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 6h10M10 12h10M10 18h10M3.5 6l1.5 1.5L8 4.5M3.5 12l1.5 1.5L8 10.5M3.5 18l1.5 1.5L8 16.5"/></svg>What's set up</button>
+        <button type="button" class="menu-item" id="keys-btn"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="2"/><path d="M6.5 10h1M10.5 10h1M14.5 10h1M7 14h10"/></svg>Keyboard shortcuts</button>
+        <div class="menu-row"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18c1.4 0 2-.9 2-1.8 0-1.3-1-1.7-1-2.7 0-1 .8-1.5 1.8-1.5H17a4 4 0 0 0 4-4c0-4.4-4-8-9-8z"/><circle cx="7.5" cy="11" r="1.2"/><circle cx="10" cy="7" r="1.2"/><circle cx="15" cy="7.5" r="1.2"/></svg><span>Colour</span>
+          <span class="swatches" role="radiogroup" aria-label="Colour theme">
+            <button type="button" class="swatch" data-palette="blue" role="radio" title="Blue"></button>
+            <button type="button" class="swatch" data-palette="green" role="radio" title="Green"></button>
+            <button type="button" class="swatch" data-palette="sepia" role="radio" title="Sepia"></button>
+          </span></div>
+        <div class="menu-row"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></svg><span>Mode</span>
+          <span class="seg mini" role="radiogroup" aria-label="Light or dark">
+            <button type="button" data-theme-mode="system" role="radio" title="Follow my computer"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg></button>
+            <button type="button" data-theme-mode="light" role="radio" title="Light"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg></button>
+            <button type="button" data-theme-mode="dark" role="radio" title="Dark"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/></svg></button>
+          </span></div>
+        <div class="menu-row"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 19 8.5 5 14 19M5.2 14h6.6M15 19l3-7.5 3 7.5M16 16.5h4"/></svg><span>Text size</span>
+          <span class="seg mini" role="radiogroup" aria-label="Text size">
+            <button type="button" data-text-size="s" role="radio" title="Small"><small>A</small></button>
+            <button type="button" data-text-size="m" role="radio" title="Normal">A</button>
+            <button type="button" data-text-size="l" role="radio" title="Large"><big>A</big></button>
+          </span></div>
+        <p class="local" id="local">Running on this computer only — other computers can't connect.</p>
+      </div>
+    </div>
   </nav>
 </header>
 
@@ -32,6 +57,7 @@
     <button type="button" id="sessions-close" class="ghost" aria-label="Close">✕</button>
   </div>
   <p class="muted">Saved on this computer. Open one to read it or ask follow-ups.</p>
+  <input type="search" id="sessions-search" placeholder="Search questions and answers" aria-label="Search past chats">
   <ul id="sessions-list"></ul>
 </aside>
 
@@ -39,6 +65,16 @@
   <h2>What's set up on this computer</h2>
   <ul id="setup-list"></ul>
   <p class="muted">Missing pieces are switched off; everything else still works.</p>
+</aside>
+
+<aside id="keys" class="panel" hidden>
+  <h2>Keyboard shortcuts</h2>
+  <dl class="keys">
+    <dt><kbd>/</kbd></dt><dd>Jump to the question box</dd>
+    <dt><kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>K</kbd></dt><dd>New chat</dd>
+    <dt><kbd>⌘</kbd>/<kbd>Ctrl</kbd> + <kbd>B</kbd></dt><dd>Show or hide Past chats</dd>
+    <dt><kbd>Esc</kbd></dt><dd>Close the settings menu or the Past chats drawer</dd>
+  </dl>
 </aside>
 
 <aside id="glossary" class="panel" hidden>
@@ -124,14 +160,29 @@
     <button type="submit" id="r-make">Make report</button>
   </form>
   <div id="report-list"></div>
+  <section id="past-reports" class="past-reports" hidden>
+    <h2>Past reports</h2>
+    <ul id="reports-saved"></ul>
+  </section>
 </main>
 
 <form id="ask" class="composer">
-  <textarea id="question" rows="2" placeholder="Ask a question…  (Enter to send, Shift+Enter for a new line)" aria-label="Question"></textarea>
-  <button type="submit" id="send">Ask</button>
+  <div class="composer-row">
+    <textarea id="question" rows="2" placeholder="Ask a question…  (Enter to send, Shift+Enter for a new line)" aria-label="Question"></textarea>
+    <button type="submit" id="send">Ask</button>
+  </div>
 </form>
 
 <div id="tip" role="tooltip" hidden></div>
+<div id="numpop" class="numpop" role="tooltip" hidden></div>
+
+<div id="viewer" class="viewer" hidden role="dialog" aria-modal="true" aria-label="Chart">
+  <button type="button" class="v-close" aria-label="Close">✕</button>
+  <button type="button" class="v-prev" aria-label="Previous chart">‹</button>
+  <figure><img alt=""><figcaption><span class="v-count"></span>
+    <a class="v-open" target="_blank" rel="noopener">Open in a new tab</a></figcaption></figure>
+  <button type="button" class="v-next" aria-label="Next chart">›</button>
+</div>
 
 <template id="answer-tpl">
   <article class="turn">
@@ -157,6 +208,7 @@
           </div>
         </div>
         <div class="charts"></div>
+        <div class="followups" hidden><span class="muted">Ask next:</span></div>
         <details class="trail">
           <summary>What I looked up</summary>
           <ul></ul>
@@ -170,6 +222,7 @@
             </select>
           </label>
           <a class="dl button" href="#" download>Download</a>
+          <button type="button" class="copy ghost" title="Copy the answer and its sources as Markdown">Copy answer</button>
           <span class="meta muted"></span>
         </div>
       </div>

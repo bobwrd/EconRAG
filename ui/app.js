@@ -23,6 +23,45 @@ function cells(line) {
   return line.trim().replace(/^\|/, "").replace(/\|$/, "").split("|").map(c => c.trim());
 }
 
+// One list, from line i: blank lines between items don't end it (models often leave them), it
+// keeps its first number (<ol start>), and indented items become a list inside their item.
+function listBlock(lines, i, li) {
+  const indent = l => l.match(/^\s*/)[0].length;
+  const marker = l => l.match(li)[1];
+  const ordered = /\d/.test(marker(lines[i]));
+  const start = ordered ? parseInt(marker(lines[i]), 10) : 1;
+  const items = [];  // {text, sub: {ordered, items: [text]} | null}
+  for (; i < lines.length; i++) {
+    const l = lines[i];
+    if (!l.trim()) {  // a blank line: the list goes on only if an item or an indented line follows
+      let j = i + 1;
+      while (j < lines.length && !lines[j].trim()) j++;
+      if (j < lines.length && (li.test(lines[j]) && (indent(lines[j]) >= 2 || /\d/.test(marker(lines[j])) === ordered)
+                               || indent(lines[j]) >= 2)) continue;
+      break;
+    }
+    if (li.test(l) && indent(l) < 2) {
+      if (/\d/.test(marker(l)) !== ordered) break;  // a different kind of list starts
+      items.push({text: l.replace(li, ""), sub: null});
+    } else if (li.test(l) && items.length) {
+      const last = items[items.length - 1];
+      last.sub = last.sub || {ordered: /\d/.test(marker(l)), items: []};
+      last.sub.items.push(l.replace(li, ""));
+    } else if (indent(l) >= 2 && items.length) {  // a wrapped line continues the item above it
+      const last = items[items.length - 1];
+      if (last.sub) last.sub.items[last.sub.items.length - 1] += " " + l.trim();
+      else last.text += " " + l.trim();
+    } else break;
+  }
+  const tag = ordered ? "ol" : "ul";
+  const html = `<${tag}${ordered && start !== 1 ? ` start="${start}"` : ""}>` + items.map(it => {
+    const sub = it.sub ? `<${it.sub.ordered ? "ol" : "ul"}>` + it.sub.items.map(t => `<li>${inline(t)}</li>`).join("") +
+      `</${it.sub.ordered ? "ol" : "ul"}>` : "";
+    return `<li>${inline(it.text)}${sub}</li>`;
+  }).join("") + `</${tag}>`;
+  return [html, i];
+}
+
 function markdown(text) {
   const lines = String(text || "").replace(/\r/g, "").split("\n");
   const out = [];
@@ -52,14 +91,9 @@ function markdown(text) {
     }
     const li = /^\s*([-*+]|\d+[.)])\s+/;
     if (li.test(line)) {
-      const ordered = /^\s*\d/.test(line);
-      const items = [];
-      for (; i < lines.length && (li.test(lines[i]) || (/^\s{2,}\S/.test(lines[i]) && items.length)); i++) {
-        if (li.test(lines[i])) items.push(lines[i].replace(li, ""));
-        else items[items.length - 1] += " " + lines[i].trim();
-      }
-      const tag = ordered ? "ol" : "ul";
-      out.push(`<${tag}>` + items.map(t => `<li>${inline(t)}</li>`).join("") + `</${tag}>`);
+      const [html, next] = listBlock(lines, i, li);
+      out.push(html);
+      i = next;
       continue;
     }
     const para = [];
@@ -116,8 +150,12 @@ function markNumbers(root, numbers) {
       b.type = "button";
       b.className = "numref s-" + n.status.replace(" ", "-");
       b.textContent = m[1];
-      b.title = `${m[1]}: ${NUM_STATUS[n.status]}. Click to see where it came from.`;
-      b.addEventListener("click", () => showNumber(root, b, n));
+      b.setAttribute("aria-label", `${m[1]}: ${NUM_STATUS[n.status]}. Show where it came from.`);
+      b.addEventListener("mouseenter", () => popNumber(b, n));
+      b.addEventListener("focus", () => popNumber(b, n));
+      b.addEventListener("mouseleave", () => hidePop(true));
+      b.addEventListener("blur", () => hidePop(true));
+      b.addEventListener("click", e => { e.stopPropagation(); popNumber(b, n, true); });
       frag.append(b);
       last = m.index + m[1].length;
     }
@@ -127,29 +165,42 @@ function markNumbers(root, numbers) {
   }
 }
 
-function showNumber(root, button, n) {
-  let box = root.nextElementSibling?.classList.contains("num-detail") ? root.nextElementSibling : null;
-  if (!box) {
-    box = document.createElement("div");
-    box.className = "num-detail";
-    root.after(box);
-  }
-  if (box.dataset.number === n.number && !box.hidden) { box.hidden = true; return; }
-  box.dataset.number = n.number;
+let popHide = null, popPinned = null;
+
+function numberHtml(n) {
   let h = `<p><strong>${esc(n.number)}</strong> — ${esc(NUM_STATUS[n.status])}.</p>`;
-  for (const s of n.sources) {
-    const args = Object.entries(s.args || {}).filter(([k]) => k !== "code")
+  for (const src of n.sources) {
+    const args = Object.entries(src.args || {}).filter(([k]) => k !== "code")
       .map(([k, v]) => `${k}=${typeof v === "string" ? v : JSON.stringify(v)}`).join(", ");
-    h += `<div class="src-item"><code>${esc(s.tool)}</code> <span class="args">${esc(args)}</span>` +
-      `<div class="muted">at <code>${esc(s.path)}</code></div>`;
-    const ctx = Object.entries(s.context || {});
+    h += `<div class="src-item"><code>${esc(src.tool)}</code> <span class="args">${esc(args)}</span>` +
+      `<div class="muted">at <code>${esc(src.path)}</code></div>`;
+    const ctx = Object.entries(src.context || {});
     if (ctx.length) h += "<dl>" + ctx.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(String(v))}</dd>`).join("") + "</dl>";
     h += "</div>";
   }
   for (const q of n.quotes || []) h += `<blockquote>…${esc(q)}…</blockquote>`;
-  box.innerHTML = h + '<button type="button" class="ghost close">Close</button>';
-  $(".close", box).addEventListener("click", () => { box.hidden = true; button.focus(); });
-  box.hidden = false;
+  return h;
+}
+
+// a small pop-up beside the number: on hover or keyboard focus; a click (or tap) keeps it open
+function popNumber(button, n, pin = false) {
+  const pop = $("#numpop");
+  clearTimeout(popHide);
+  if (pin && popPinned === button) { hidePop(); return; }
+  if (pin) popPinned = button;
+  pop.innerHTML = numberHtml(n);
+  pop.hidden = false;
+  const b = button.getBoundingClientRect(), p = pop.getBoundingClientRect();
+  const below = b.bottom + 8 + p.height <= innerHeight;
+  pop.style.top = `${below ? b.bottom + 8 : Math.max(8, b.top - 8 - p.height)}px`;
+  pop.style.left = `${Math.min(Math.max(8, b.left), innerWidth - p.width - 8)}px`;
+}
+
+function hidePop(later = false) {
+  clearTimeout(popHide);
+  const hide = () => { $("#numpop").hidden = true; popPinned = null; };
+  if (later) popHide = setTimeout(() => { if (!popPinned) hide(); }, 250);
+  else hide();
 }
 
 function highlightTerms(root) {
@@ -286,9 +337,10 @@ function showResult(card, r) {
   markNumbers(plain, r.numbers || []);
   technicalItems($(".tech-items", res), r.technical || []);
   const charts = $(".charts", res);
-  for (const src of r.charts) {
+  for (const [i, src] of r.charts.entries()) {
     const a = document.createElement("a");
     a.href = src; a.target = "_blank"; a.rel = "noopener";
+    a.addEventListener("click", e => { e.preventDefault(); openViewer(r.charts, i); });
     const img = document.createElement("img");
     img.src = src; img.alt = "Chart: " + src.split("/").pop().replace(/^\d+-\d+_\d+_/, "").replace(/\.\w+$/, "");
     img.loading = "lazy";
@@ -321,6 +373,24 @@ function showResult(card, r) {
   }
   if (r.backend === "offline" || !r.tools.length) $(".rewrite", res).hidden = true;
   $(".rewrite-btn", res).addEventListener("click", e => rewrite(e.target, r.id, $(".rewrite-out", res)));
+  // follow-ups: written by Python from what was looked up; a click puts one in the box to edit
+  const fu = $(".followups", res);
+  for (const text of r.followups || []) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "chip";
+    b.textContent = text;
+    b.addEventListener("click", () => {
+      setMode("chat");
+      const q = $("#question");
+      q.value = text;
+      q.focus();
+      q.setSelectionRange(text.length, text.length);
+    });
+    fu.append(b);
+  }
+  fu.hidden = !(r.followups || []).length;
+  $(".copy", res).addEventListener("click", e => copyAnswer(e.target, r));
   res.hidden = false;
 }
 
@@ -351,11 +421,15 @@ async function rewrite(btn, id, out) {
 async function ask(question) {
   if (busy || !question.trim()) return;
   busy = true;
-  $("#send").disabled = true;
+  $("#send").textContent = "Stop";
+  $("#send").classList.add("stop");
+  $("#send").title = "Stop this question (nothing is saved)";
   $("#intro").hidden = true;
   const card = $("#answer-tpl").content.firstElementChild.cloneNode(true);
   $(".q", card).textContent = question;
   const steps = $(".progress", card);
+  const stages = stagesList(), state = {tools: 0, waitUntil: 0};
+  steps.before(stages);
   const working = document.createElement("li");
   working.className = "step working";
   working.textContent = "Working…";
@@ -363,7 +437,11 @@ async function ask(question) {
   $("#log").append(card);
   card.scrollIntoView({behavior: "smooth", block: "end"});
   const t0 = Date.now();
-  const timer = setInterval(() => { working.textContent = `Working… ${Math.round((Date.now() - t0) / 1000)}s`; }, 1000);
+  const timer = setInterval(() => {
+    const wait = Math.round((state.waitUntil - Date.now()) / 1000);
+    working.textContent = wait > 0 ? `Waiting for Groq's free-tier limit: ${wait}s` :
+      `Working… ${Math.round((Date.now() - t0) / 1000)}s`;
+  }, 1000);
   try {
     const res = await fetch("/api/ask", {method: "POST", headers: {"Content-Type": "application/json"},
       body: JSON.stringify({question})});
@@ -381,14 +459,26 @@ async function ask(question) {
         buf = buf.slice(nl + 1);
         if (!line) continue;
         const ev = JSON.parse(line);
-        if (ev.kind === "done") { working.remove(); showResult(card, ev); loadUsage(); if (!$("#sessions").hidden) loadSessions(); }
-        else if (ev.kind === "error") throw new Error(ev.text);
-        else { addStep(steps, ev); steps.append(working); }
+        if (ev.kind === "done" && ev.stopped) {
+          working.remove();
+          stages.remove();
+          card.classList.add("stopped");
+          const p = document.createElement("p");
+          p.className = "muted";
+          p.textContent = `Stopped after ${ev.seconds}s — nothing was saved, and follow-ups won't remember it.`;
+          $(".a", card).append(p);
+          loadUsage();
+        } else if (ev.kind === "done") {
+          working.remove(); stages.remove(); showResult(card, ev); loadUsage();
+          if (!$("#sessions").hidden) loadSessions();
+        } else if (ev.kind === "error") throw new Error(ev.text);
+        else { updateStages(stages, ev, state); addStep(steps, ev); steps.append(working); }
       }
     }
     if (working.isConnected) throw new Error("The connection closed before the answer arrived.");
   } catch (e) {
     working.remove();
+    stages.remove();
     const err = document.createElement("p");
     err.className = "err";
     err.textContent = "Something went wrong: " + e.message;
@@ -396,9 +486,130 @@ async function ask(question) {
   } finally {
     clearInterval(timer);
     busy = false;
-    $("#send").disabled = false;
+    const send = $("#send");
+    send.disabled = false;
+    send.textContent = "Ask";
+    send.classList.remove("stop");
+    send.title = "";
     $("#question").focus();
   }
+}
+
+// ------------------------------------------------------------ copy, chart viewer, stop, progress
+async function copyAnswer(button, r) {
+  const sources = (r.tools || []).map(t => `- ${t.summary || t.name}`);
+  const text = r.answer + (sources.length ? "\n\nLooked up:\n" + sources.join("\n") : "") +
+    (r.unverified?.length ? `\n\nNot found in any tool result: ${r.unverified.join(", ")}` : "");
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch (e) {  // older browsers: the hidden-textarea way
+    const t = document.createElement("textarea");
+    t.value = text;
+    document.body.append(t);
+    t.select();
+    document.execCommand("copy");
+    t.remove();
+  }
+  button.textContent = "Copied ✓";
+  setTimeout(() => { button.textContent = "Copy answer"; }, 1500);
+}
+
+let viewer = {list: [], i: 0, from: null};
+
+function openViewer(list, i) {
+  viewer = {list, i, from: document.activeElement};
+  $("#viewer").hidden = false;
+  showChart(0);
+  $("#viewer .v-close").focus();
+}
+
+function showChart(step) {
+  const v = viewer, n = v.list.length;
+  v.i = (v.i + step + n) % n;
+  const src = v.list[v.i];
+  $("#viewer img").src = src;
+  $("#viewer img").alt = "Chart: " + src.split("/").pop().replace(/^\d+-\d+_\d+_/, "").replace(/\.\w+$/, "");
+  $("#viewer .v-open").href = src;
+  $("#viewer .v-count").textContent = n > 1 ? `${v.i + 1} of ${n} · ` : "";
+  $("#viewer .v-prev").hidden = $("#viewer .v-next").hidden = n < 2;
+}
+
+function closeViewer() {
+  $("#viewer").hidden = true;
+  viewer.from?.focus();
+}
+
+async function stopQuestion() {
+  $("#send").disabled = true;
+  $("#send").textContent = "Stopping…";
+  try { await fetch("/api/stop", {method: "POST"}); } catch (e) { /* the answer may finish anyway */ }
+}
+
+// The checklist above the live steps: what stage the question is at
+const STAGES = [["look", "Looking things up"], ["check", "Fact-checking the answer"], ["charts", "Drawing charts"]];
+
+function stagesList() {
+  const ol = document.createElement("ol");
+  ol.className = "stages";
+  ol.innerHTML = STAGES.map(([k, label]) => `<li data-stage="${k}">${label}<span class="count"></span></li>`).join("");
+  ol.firstElementChild.classList.add("active");
+  return ol;
+}
+
+function updateStages(ol, ev, state) {
+  const set = (k, cls) => {
+    const li = $(`[data-stage=${k}]`, ol);
+    li.classList.remove("active", "done", "fixing");
+    if (cls) li.classList.add(cls);
+  };
+  if (ev.kind === "tool") {
+    state.tools += 1;
+    $("[data-stage=look] .count", ol).textContent = ` (${state.tools} so far)`;
+  } else if (ev.kind === "revision") {
+    set("check", "fixing");
+    $("[data-stage=check]", ol).firstChild.textContent = "Fact-check found a problem: asking for a fix";
+  } else if (ev.kind === "answer") {
+    set("look", "done");
+    set("check", "done");
+    $("[data-stage=check]", ol).firstChild.textContent = "Fact-checked";
+    set("charts", "active");
+  } else if (ev.kind === "wait" && ev.seconds) {
+    state.waitUntil = Date.now() + ev.seconds * 1000;
+  }
+}
+
+// ------------------------------------------------------------ past reports (saved in sessions.py)
+const REPORT_KINDS = {compare: "Comparison", brief: "Country brief", poverty: "Poverty profile", works: "What works"};
+
+async function loadReports() {
+  try {
+    const r = await (await fetch("/api/reports")).json();
+    const box = $("#past-reports");
+    box.hidden = !r.saving || !r.reports.length;
+    $("#reports-saved").innerHTML = r.reports.map(p =>
+      `<li data-id="${p.id}"><button type="button" class="open"><span class="title">${esc(p.title)}</span>` +
+      `<span class="when">${esc(REPORT_KINDS[p.kind] || p.kind)} · ${esc(p.created.replace("T", " ").slice(0, 16))}</span></button>` +
+      `<button type="button" class="act del" title="Delete this report">${ICONS.del}</button></li>`).join("");
+  } catch (e) { /* the page still works */ }
+}
+
+async function openReport(id) {
+  const res = await fetch(`/api/reports/view?id=${id}`);
+  const r = await res.json();
+  if (!res.ok) { alert(r.error || res.statusText); return; }
+  const card = document.createElement("article");
+  card.className = "a report";
+  $("#report-list").prepend(card);
+  renderReport(card, r);
+  card.scrollIntoView({behavior: "smooth", block: "start"});
+}
+
+async function deleteReport(id, title) {
+  if (!confirm(`Delete the saved report "${title}"? This can't be undone.`)) return;
+  const res = await fetch("/api/reports/delete", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({id})});
+  if (!res.ok) alert((await res.json()).error || res.statusText);
+  loadReports();
 }
 
 // ------------------------------------------------------------ reports
@@ -512,7 +723,7 @@ async function makeReport() {
     if (!res.ok) throw new Error((await res.json()).error || res.statusText);
     let finished = false;
     await readStream(res, ev => {
-      if (ev.kind === "done") { finished = true; renderReport(card, ev); loadUsage(); }
+      if (ev.kind === "done") { finished = true; renderReport(card, ev); loadUsage(); loadReports(); }
       else if (ev.kind === "error") throw new Error(ev.text);
       else add(ev.text);
     });
@@ -573,7 +784,7 @@ async function loadReportOptions() {
 }
 
 function setMode(mode) {
-  if (mode === "reports") loadReportOptions();
+  if (mode === "reports") { loadReportOptions(); loadReports(); }
   document.querySelectorAll(".modes button").forEach(b => b.classList.toggle("on", b.dataset.mode === mode));
   $("#log").hidden = mode !== "chat";
   $("#ask").hidden = mode !== "chat";
@@ -608,28 +819,89 @@ async function loadUsage() {
   try {
     const u = await (await fetch("/api/usage")).json();
     const el = $("#usage");
-    el.textContent = `Groq tokens, last 24 hours: ${u.groq.toLocaleString()} of ${u.limit.toLocaleString()}` +
-      (u.openrouter ? ` · OpenRouter backup: ${u.openrouter.toLocaleString()}` : "");
-    el.title = "Counted from the replies this copy received; other programs using the same key aren't included.";
+    const k = n => n >= 1000 ? `${(n / 1000).toFixed(n < 10000 ? 1 : 0)}K` : String(n);
+    el.textContent = `Groq ${k(u.groq)} / ${k(u.limit)} today` + (u.openrouter ? ` · backup ${k(u.openrouter)}` : "");
+    el.title = `Groq tokens used in the last 24 hours: ${u.groq.toLocaleString()} of ${u.limit.toLocaleString()}` +
+      (u.openrouter ? `; OpenRouter backup: ${u.openrouter.toLocaleString()}` : "") +
+      ". Counted from the replies this copy received; other programs using the same key aren't included.";
     el.classList.toggle("near", u.groq >= 0.8 * u.limit);
     el.hidden = false;
   } catch (e) { /* the page still works */ }
 }
 
 // ------------------------------------------------------------ past chats (sessions.py)
+const SVG = d => `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true">${d}</svg>`;
+const ICONS = {
+  pin: SVG('<path d="M12 3l2.6 5.6 6 .7-4.5 4.1 1.2 6L12 16.4 6.7 19.4l1.2-6L3.4 9.3l6-.7z"/>'),
+  rename: SVG('<path d="M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4"/>'),
+  export: SVG('<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>'),
+  del: SVG('<path d="M4 7h16M10 7V4h4v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/>'),
+};
+let sessionsQuery = "", sessionsTimer = null;
+
+function marked(text, query) {  // text with the search words highlighted
+  if (!query) return esc(text);
+  const at = text.toLowerCase().indexOf(query.toLowerCase());
+  if (at < 0) return esc(text);
+  return esc(text.slice(0, at)) + `<mark>${esc(text.slice(at, at + query.length))}</mark>` + esc(text.slice(at + query.length));
+}
+
 async function loadSessions() {
   try {
-    const r = await (await fetch("/api/sessions")).json();
+    const q = sessionsQuery;
+    const r = await (await fetch("/api/sessions?q=" + encodeURIComponent(q))).json();
+    if (q !== sessionsQuery) return;  // a newer search is on its way
     const list = $("#sessions-list");
     if (!r.saving) { list.innerHTML = '<li class="muted">Saving is off on this computer.</li>'; return; }
-    if (!r.sessions.length) { list.innerHTML = '<li class="muted">No saved chats yet.</li>'; return; }
-    list.innerHTML = r.sessions.map(s =>
-      `<li class="${s.id === r.current ? "current" : ""}"><button type="button" class="open" data-id="${s.id}">` +
-      `${esc(s.title)}<span class="when">${esc(s.updated.replace("T", " ").slice(0, 16))} · ` +
-      `${s.answers} answer${s.answers === 1 ? "" : "s"}</span></button>` +
-      `<span class="acts"><a class="ghost" href="/api/sessions/export?id=${s.id}" download>Export</a>` +
-      `<button type="button" class="ghost del" data-id="${s.id}" aria-label="Delete this chat">Delete</button></span></li>`).join("");
+    if (!r.sessions.length) {
+      list.innerHTML = `<li class="muted">${q ? "No chats mention that." : "No saved chats yet."}</li>`;
+      return;
+    }
+    const item = s =>
+      `<li class="${s.id === r.current ? "current" : ""}${s.pinned ? " pinned" : ""}" data-id="${s.id}">` +
+      `<button type="button" class="open"><span class="title">${marked(s.title, q)}</span>` +
+      (s.snippet ? `<span class="snippet">${marked(s.snippet, q)}</span>` : "") +
+      `<span class="when">${esc(s.updated.replace("T", " ").slice(0, 16))} · ${s.answers} answer${s.answers === 1 ? "" : "s"}</span></button>` +
+      `<span class="acts">` +
+      `<button type="button" class="act pin${s.pinned ? " on" : ""}" title="${s.pinned ? "Unpin" : "Pin to the top"}" aria-pressed="${s.pinned}">${ICONS.pin}</button>` +
+      `<button type="button" class="act rename" title="Rename">${ICONS.rename}</button>` +
+      `<a class="act" href="/api/sessions/export?id=${s.id}" download title="Export (zip)">${ICONS.export}</a>` +
+      `<button type="button" class="act del" title="Delete">${ICONS.del}</button></span></li>`;
+    const pinned = r.sessions.filter(s => s.pinned), rest = r.sessions.filter(s => !s.pinned);
+    list.innerHTML = (pinned.length ? '<li class="group">Pinned</li>' + pinned.map(item).join("") +
+                                      (rest.length ? '<li class="group">Recent</li>' : "") : "") + rest.map(item).join("");
   } catch (e) { /* the page still works */ }
+}
+
+async function sessionAction(path, body) {
+  const res = await fetch(path, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  if (!res.ok) alert((await res.json()).error || res.statusText);
+  loadSessions();
+}
+
+function startRename(li) {
+  const title = $(".open .title", li).textContent;
+  const input = document.createElement("input");
+  input.type = "text";
+  input.className = "rename-box";
+  input.value = title;
+  input.setAttribute("aria-label", "New name for this chat");
+  $(".open", li).replaceWith(input);
+  input.focus();
+  input.select();
+  let done = false;
+  const finish = save => {
+    if (done) return;
+    done = true;
+    const name = input.value.trim();
+    if (save && name && name !== title) sessionAction("/api/sessions/rename", {id: Number(li.dataset.id), title: name});
+    else loadSessions();
+  };
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter") { e.preventDefault(); finish(true); }
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); finish(false); }
+  });
+  input.addEventListener("blur", () => finish(true));
 }
 
 function clearLog(showIntro = false) {
@@ -703,7 +975,57 @@ function sidebarDefault() {
 }
 
 function toggle(id) {
-  for (const p of ["setup", "glossary"]) $("#" + p).hidden = p === id ? !$("#" + p).hidden : true;
+  for (const p of ["setup", "glossary", "keys"]) $("#" + p).hidden = p === id ? !$("#" + p).hidden : true;
+}
+
+// ------------------------------------------------------------ settings menu (theme.js applies the look)
+function showMenu(show) {
+  $("#menu").hidden = !show;
+  $("#menu-btn").setAttribute("aria-expanded", String(show));
+}
+
+function markLook() {
+  const root = document.documentElement.dataset;
+  const mark = (attr, value) => document.querySelectorAll(`#menu [${attr}]`).forEach(b => {
+    const on = b.getAttribute(attr) === value;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-checked", String(on));
+  });
+  mark("data-palette", root.palette);
+  mark("data-theme-mode", root.themeMode);
+  mark("data-text-size", root.size);
+}
+
+function setLook(key, value) {
+  try { localStorage.setItem(key, value); } catch (e) { /* private window: this visit only */ }
+  const root = document.documentElement;
+  root.dataset[{palette: "palette", themeMode: "themeMode", textSize: "size"}[key]] = value;
+  root.classList.toggle("dark", root.dataset.themeMode === "dark" ||
+    (root.dataset.themeMode === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches));
+  markLook();
+}
+
+// ------------------------------------------------------------ keyboard shortcuts
+function typingIn(el) {
+  return el && (el.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(el.tagName));
+}
+
+function shortcuts(e) {
+  const mod = e.metaKey || e.ctrlKey;
+  if (e.key === "/" && !mod && !typingIn(document.activeElement)) {
+    e.preventDefault();
+    setMode("chat");
+    $("#question").focus();
+  } else if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "k") {
+    e.preventDefault();
+    newChat();
+  } else if (mod && !e.shiftKey && !e.altKey && e.key.toLowerCase() === "b") {
+    e.preventDefault();
+    showSessions($("#sessions").hidden);
+  } else if (e.key === "Escape" && !$("#menu").hidden) {
+    showMenu(false);
+    $("#menu-btn").focus();
+  }
 }
 
 document.addEventListener("DOMContentLoaded", () => {
@@ -711,13 +1033,43 @@ document.addEventListener("DOMContentLoaded", () => {
   loadStatus();
   loadUsage();
   const q = $("#question");
-  $("#ask").addEventListener("submit", e => { e.preventDefault(); const v = q.value; q.value = ""; ask(v); });
+  $("#ask").addEventListener("submit", e => {
+    e.preventDefault();
+    if (busy) { if (e.submitter === $("#send")) stopQuestion(); return; }  // the button reads "Stop"
+    const v = q.value; q.value = ""; ask(v);
+  });
   q.addEventListener("keydown", e => {
     if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); $("#ask").requestSubmit(); }
   });
   $("#examples").addEventListener("click", e => { if (e.target.tagName === "BUTTON") ask(e.target.textContent); });
-  $("#glossary-btn").addEventListener("click", () => toggle("glossary"));
-  $("#setup-btn").addEventListener("click", () => toggle("setup"));
+  $("#glossary-btn").addEventListener("click", () => { showMenu(false); toggle("glossary"); });
+  $("#setup-btn").addEventListener("click", () => { showMenu(false); toggle("setup"); });
+  $("#keys-btn").addEventListener("click", () => { showMenu(false); toggle("keys"); });
+  $("#menu-btn").addEventListener("click", e => { e.stopPropagation(); showMenu($("#menu").hidden); });
+  document.addEventListener("click", e => { if (!$("#menu").hidden && !e.target.closest(".menu-wrap")) showMenu(false); });
+  $("#menu").addEventListener("click", e => {
+    const b = e.target.closest("button");
+    if (b?.dataset.palette) setLook("palette", b.dataset.palette);
+    else if (b?.dataset.themeMode) setLook("themeMode", b.dataset.themeMode);
+    else if (b?.dataset.textSize) setLook("textSize", b.dataset.textSize);
+  });
+  markLook();
+  document.addEventListener("keydown", shortcuts);
+  $("#viewer .v-close").addEventListener("click", closeViewer);
+  $("#viewer .v-prev").addEventListener("click", () => showChart(-1));
+  $("#viewer .v-next").addEventListener("click", () => showChart(1));
+  $("#viewer").addEventListener("click", e => { if (e.target.id === "viewer") closeViewer(); });
+  document.addEventListener("keydown", e => {
+    if ($("#viewer").hidden) return;
+    if (e.key === "Escape") closeViewer();
+    else if (e.key === "ArrowLeft") showChart(-1);
+    else if (e.key === "ArrowRight") showChart(1);
+  });
+  $("#numpop").addEventListener("mouseenter", () => clearTimeout(popHide));
+  $("#numpop").addEventListener("mouseleave", () => hidePop(true));
+  document.addEventListener("click", e => { if (popPinned && !e.target.closest("#numpop")) hidePop(); });
+  document.addEventListener("keydown", e => { if (e.key === "Escape" && !$("#numpop").hidden) hidePop(); });
+  window.addEventListener("scroll", () => { if (!popPinned) hidePop(); }, {passive: true});
   $("#sessions-btn").addEventListener("click", () => showSessions($("#sessions").hidden));
   $("#sessions-close").addEventListener("click", () => showSessions(false));
   document.addEventListener("keydown", e => {
@@ -728,10 +1080,22 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#sessions-list").addEventListener("click", e => {
     const b = e.target.closest("button");
     if (!b) return;
+    const li = b.closest("li"), id = Number(li.dataset.id);
+    if (b.classList.contains("del")) deleteSession(id, $(".open .title", li).textContent, li.classList.contains("current"));
+    else if (b.classList.contains("pin")) sessionAction("/api/sessions/pin", {id, pinned: !li.classList.contains("pinned")});
+    else if (b.classList.contains("rename")) startRename(li);
+    else if (b.classList.contains("open")) openSession(id);
+  });
+  $("#reports-saved").addEventListener("click", e => {
+    const b = e.target.closest("button");
+    if (!b) return;
     const li = b.closest("li");
-    if (b.classList.contains("del")) deleteSession(Number(b.dataset.id), li.querySelector(".open").firstChild.textContent,
-                                                   li.classList.contains("current"));
-    else openSession(Number(b.dataset.id));
+    if (b.classList.contains("del")) deleteReport(Number(li.dataset.id), $(".title", li).textContent);
+    else openReport(Number(li.dataset.id));
+  });
+  $("#sessions-search").addEventListener("input", e => {
+    clearTimeout(sessionsTimer);
+    sessionsTimer = setTimeout(() => { sessionsQuery = e.target.value.trim(); loadSessions(); }, 200);
   });
   $("#glossary-filter").addEventListener("input", e => {
     const f = e.target.value.toLowerCase();

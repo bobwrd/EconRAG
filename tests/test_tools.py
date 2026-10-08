@@ -394,6 +394,22 @@ def _with_fake(script, fn):
         analyst.groq_post = original
 
 
+def test_analyst_stops_before_its_next_step():
+    bot = _bot()
+    bot.history = [{"role": "user", "content": "earlier"}, {"role": "assistant", "content": "answer"}]
+    tools_done = []
+    bot.on_event = lambda kind, text, **data: tools_done.append(kind)
+    bot.should_stop = lambda: "tool" in tools_done  # Stop pressed while the first lookup ran
+    script = [_tool_call("county_profile", {"county": "Cook", "state": "IL"}), {"content": "never sent"}]
+    try:
+        _with_fake(script, lambda: bot.run("Cook?"))
+        raise AssertionError("should have stopped")
+    except analyst.Stopped:
+        pass
+    assert script == [{"content": "never sent"}]  # no second Groq request
+    assert len(bot.history) == 2  # the stopped question isn't remembered
+
+
 def test_analyst_revises_unsupported_numbers():
     bot = _bot()
     script = [_tool_call("county_profile", {"county": "Cook", "state": "IL"}),

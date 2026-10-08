@@ -161,6 +161,12 @@ def test_saved_chats_survive_a_restart_and_can_be_continued():
         assert _request(app, "GET", "/api/sessions/export?id=x")[0] == 404
         _, events = _ask(app, "And Cook again?", [{"content": "Still 38.5."}])
         assert events[-1]["session"] == first["session"]
+        assert _request(app, "POST", "/api/sessions/rename", {"id": first["session"], "title": "Cook check"})[0] == 200
+        assert _request(app, "POST", "/api/sessions/pin", {"id": first["session"], "pinned": True})[0] == 200
+        listed = json.loads(_request(app, "GET", "/api/sessions?q=nationally")[1])["sessions"]
+        assert [(s["title"], s["pinned"]) for s in listed] == [("Cook check", True)] and "nationally" in listed[0]["snippet"]
+        assert _request(app, "POST", "/api/sessions/rename", {"id": 999, "title": "x"})[0] == 404
+        assert _request(app, "POST", "/api/sessions/pin", {"id": "x"})[0] == 404
         assert _request(app, "POST", "/api/sessions/open", {"id": 999})[0] == 404
         assert _request(app, "POST", "/api/sessions/delete", {"id": first["session"]}, origin="https://evil.example")[0] == 403
         assert _request(app, "POST", "/api/sessions/delete", {"id": first["session"]})[0] == 200
@@ -169,6 +175,40 @@ def test_saved_chats_survive_a_restart_and_can_be_continued():
         assert len(json.loads(_request(app, "GET", "/api/sessions")[1])["sessions"]) == 1
     finally:
         server.shutdown()
+
+
+def test_stop_discards_the_question_and_follow_ups_are_suggested():
+    app, server = _serve(tt._bot())
+    try:
+        original = analyst.groq_post
+        fake, _ = tt._fake_groq([COOK, {"content": "never sent"}])
+
+        def post(payload, stream=False):  # Stop arrives while the model's first reply is in flight
+            _request(app, "POST", "/api/stop")
+            return fake(payload, stream)
+        analyst.groq_post = post
+        try:
+            status, body = _request(app, "POST", "/api/ask", {"question": "Cook?"})
+        finally:
+            analyst.groq_post = original
+        done = json.loads(body.decode().splitlines()[-1])
+        assert status == 200 and done["kind"] == "done" and done["stopped"] is True
+        assert app.answers == {} and app.analyst.history == []  # nothing saved or remembered
+        assert _request(app, "POST", "/api/stop", origin="https://evil.example")[0] == 403
+        _, events = _ask(app, "Cook?", [COOK, {"content": "Cook is at 38.5."}])  # the next one runs normally
+        assert events[-1]["answer"] == "Cook is at 38.5."
+        assert events[-1]["followups"][0] == "Which nearby counties have higher upward mobility than Cook County, IL?"
+    finally:
+        server.shutdown()
+    wb = {"economies": [{"economy": "Kenya"}], "name": "Life expectancy at birth, total (years)"}
+    two = {"economies": [{"economy": "Kenya"}, {"economy": "Ghana"}], "name": "GDP per capita, PPP (current international $)"}
+    assert web.followups("q", [("get_data", {"series": "SP.DYN.LE00.IN"}, wb)]) == [
+        "How does Kenya compare with its region and income group on life expectancy at birth?",
+        "How has life expectancy at birth in Kenya changed since 1990?"]
+    assert web.followups("q", [("get_data", {}, two)]) == ["Which of Kenya and Ghana improved fastest on GDP per capita?"]
+    assert web.followups("q", [("search_papers", {"query": "microcredit"}, {})] * 2) == [
+        "What do randomized evaluations find about microcredit?"]  # no repeats
+    assert web.followups("q", [("get_data", {}, {"error": "x"})]) == []
 
 
 def test_full_series_specs():

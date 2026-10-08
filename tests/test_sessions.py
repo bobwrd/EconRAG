@@ -60,6 +60,50 @@ def test_list_is_most_recent_first_and_delete_removes_answers():
     assert db.record(int(answer)) is None and [s["id"] for s in db.list()] == [new]
 
 
+def test_rename_pin_and_search():
+    db = _db()
+    cook = db.new("How does Cook County compare?")
+    db.add(cook, _record("How does Cook County compare?", "Upward mobility is 38.5 in Cook."), {})
+    kenya = db.new("Kenya poverty")
+    db.add(kenya, _record("Kenya poverty", "Extreme poverty fell to 36% (100% of 50_x).\n\n1. **Rural** areas:\n   - slower"), {})
+    assert db.rename(cook, "  Chicago   mobility ") and db.list()[1]["title"] == "Chicago mobility"
+    assert not db.rename(cook, "   ") and not db.rename(999, "x")
+    assert db.pin(cook, True) and [s["id"] for s in db.list()] == [cook, kenya]  # pinned first
+    assert db.list()[0]["pinned"] is True and db.list()[1]["pinned"] is False
+    found = db.list(query="MOBILITY IS")  # any case, in answers too, with a snippet
+    assert [s["id"] for s in found] == [cook] and "<" not in found[0]["snippet"] and "mobility is 38.5" in found[0]["snippet"]
+    assert db.list(query="chicago")[0]["snippet"] == ""  # matched the title: no snippet needed
+    assert [s["id"] for s in db.list(query="100%")] == [kenya]  # % and _ are literal, not wildcards
+    assert db.list(query="0_x") and not db.list(query="0%x") and not db.list(query="nothing like this")
+    assert db.list(query="rural")[0]["snippet"].endswith("Rural areas: slower")  # Markdown marks left out
+
+
+def test_a_database_from_before_pinning_is_upgraded():
+    import sqlite3
+    path = Path(tempfile.mkdtemp()) / "old.db"
+    old = sqlite3.connect(path)
+    old.executescript("CREATE TABLE sessions (id INTEGER PRIMARY KEY, title TEXT NOT NULL, created TEXT NOT NULL, "
+                      "updated TEXT NOT NULL); INSERT INTO sessions VALUES (1, 'Old chat', '2026-10-09', '2026-10-09');")
+    old.commit()
+    old.close()
+    db = sessions.Sessions(path)
+    assert db.list()[0]["pinned"] is False and db.pin(1, True) and db.list()[0]["pinned"] is True
+    assert db.reports() == []
+
+
+def test_reports_are_saved_whole():
+    db = _db()
+    report = {"kind": "brief", "title": "Kenya: country brief", "created": "2026-10-09T10:00:00",
+              "sections": [{"heading": "Income", "table": {"columns": ["a"], "rows": [["1"]]}}],
+              "results": [("get_data", {"series": "x"}, {"economies": []})]}
+    first = db.add_report(report)
+    second = db.add_report({**report, "title": "Ghana: country brief"})
+    assert [r["title"] for r in db.reports()] == ["Ghana: country brief", "Kenya: country brief"]
+    back = db.report(first)
+    assert back["sections"] == report["sections"] and back["results"][0][0] == "get_data"
+    assert db.delete_report(second) and not db.delete_report(second) and db.report(second) is None
+
+
 if __name__ == "__main__":
     failed = 0
     for name, fn in [(n, f) for n, f in list(globals().items()) if n.startswith("test_")]:

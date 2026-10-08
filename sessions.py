@@ -1,14 +1,18 @@
 """
-Saved conversations for the web UI (web.py): every answer is kept in
-data/sessions.db (SQLite, built into Python), so past chats survive a restart
-and can be reopened, continued, or deleted. Nothing here calls a model.
+Saved conversations and reports for the web UI (web.py), in data/sessions.db
+(SQLite, built into Python), so they survive a restart: chats can be reopened,
+continued, renamed, pinned, searched or deleted; reports reopened and downloaded
+again. Nothing here calls a model.
 
 Each answer row keeps two JSON blobs:
   view   — what the page shows (answer, fact-check, charts, tool trail, technical details)
   record — what downloads and the technical rewrite need (question, tool results, evidence)
 """
 
+from __future__ import annotations  # the method named "list" would hide list[...] in hints
+
 import json
+import re
 import sqlite3
 import threading
 from datetime import datetime
@@ -34,7 +38,21 @@ CREATE TABLE IF NOT EXISTS answers (
     record TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS answers_by_session ON answers(session_id, id);
+CREATE TABLE IF NOT EXISTS reports (
+    id INTEGER PRIMARY KEY,
+    kind TEXT NOT NULL,
+    title TEXT NOT NULL,
+    created TEXT NOT NULL,
+    report TEXT NOT NULL
+);
 """
+SNIPPET_CHARS = 90  # text shown around a search match
+
+
+def _plain(markdown: str) -> str:
+    """Answer text without Markdown marks, for search snippets."""
+    text = re.sub(r"(?m)^\s*(?:[-*+]|\d+[.)]|#{1,6}|>)\s+", "", markdown)  # list markers, headings, quotes
+    return re.sub(r"\*\*|__|`|\|", "", text)
 
 
 def _now() -> str:
@@ -64,11 +82,18 @@ class Sessions:
         self.db.row_factory = sqlite3.Row
         self.db.execute("PRAGMA foreign_keys = ON")
         self.db.executescript(SCHEMA)
+        columns = {r["name"] for r in self.db.execute("PRAGMA table_info(sessions)")}
+        if "pinned" not in columns:  # databases made before pinning existed
+            self.db.execute("ALTER TABLE sessions ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0")
         self.lock = threading.Lock()
 
+    @staticmethod
+    def _title(text: str) -> str:
+        title = " ".join(str(text).split())
+        return title if len(title) <= TITLE_CHARS else title[:TITLE_CHARS - 1].rstrip() + "…"
+
     def new(self, first_question: str) -> int:
-        title = " ".join(first_question.split())
-        title = title if len(title) <= TITLE_CHARS else title[:TITLE_CHARS - 1].rstrip() + "…"
+        title = self._title(first_question)
         with self.lock, self.db:
             now = _now()
             return self.db.execute("INSERT INTO sessions (title, created, updated) VALUES (?, ?, ?)",
@@ -94,14 +119,53 @@ class Sessions:
             row = self.db.execute("SELECT record FROM answers WHERE id = ?", (answer_id,)).fetchone()
         return _load_record(row["record"]) if row else None
 
-    def list(self, limit: int = 200) -> list[dict]:
-        """Most recently used first."""
+    def list(self, limit: int = 200, query: str = "") -> list[dict]:
+        """Pinned first, then most recently used. With a query: only chats whose title, questions or
+        answers contain it (any case), each with a snippet of where it matched."""
+        words = query.strip()
+        where, args = "", []
+        if words:
+            like = "%" + words.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            where = ("WHERE s.title LIKE ? ESCAPE '\\' OR EXISTS (SELECT 1 FROM answers m WHERE m.session_id = s.id "
+                     "AND (m.question LIKE ? ESCAPE '\\' OR m.answer LIKE ? ESCAPE '\\'))")
+            args = [like, like, like]
         with self.lock:
-            rows = self.db.execute(
-                "SELECT s.id, s.title, s.created, s.updated, COUNT(a.id) AS answers FROM sessions s "
-                "LEFT JOIN answers a ON a.session_id = s.id GROUP BY s.id ORDER BY s.updated DESC, s.id DESC "
-                "LIMIT ?", (limit,)).fetchall()
-        return [dict(r) for r in rows]
+            rows = [dict(r) for r in self.db.execute(
+                "SELECT s.id, s.title, s.created, s.updated, s.pinned, COUNT(a.id) AS answers FROM sessions s "
+                f"LEFT JOIN answers a ON a.session_id = s.id {where} GROUP BY s.id "
+                "ORDER BY s.pinned DESC, s.updated DESC, s.id DESC LIMIT ?", (*args, limit)).fetchall()]
+            if words:
+                for row in rows:
+                    row["snippet"] = self._snippet(row, words)
+        for row in rows:
+            row["pinned"] = bool(row["pinned"])
+        return rows
+
+    def _snippet(self, row: dict, words: str) -> str:
+        """The first place a chat mentions the search words (lock held by the caller)."""
+        if words.lower() in row["title"].lower():
+            return ""
+        for q, a in self.db.execute("SELECT question, answer FROM answers WHERE session_id = ? ORDER BY id",
+                                    (row["id"],)):
+            for text in (q, _plain(a)):
+                at = text.lower().find(words.lower())
+                if at >= 0:
+                    begin = max(0, at - SNIPPET_CHARS // 2)
+                    piece = " ".join(text[begin:begin + SNIPPET_CHARS].split())
+                    return ("…" if begin else "") + piece + ("…" if begin + SNIPPET_CHARS < len(text) else "")
+        return ""
+
+    def rename(self, session_id: int, title: str) -> bool:
+        title = self._title(title)
+        if not title:
+            return False
+        with self.lock, self.db:
+            return self.db.execute("UPDATE sessions SET title = ? WHERE id = ?", (title, session_id)).rowcount > 0
+
+    def pin(self, session_id: int, pinned: bool) -> bool:
+        with self.lock, self.db:
+            return self.db.execute("UPDATE sessions SET pinned = ? WHERE id = ?",
+                                   (int(bool(pinned)), session_id)).rowcount > 0
 
     def get(self, session_id: int) -> dict | None:
         """The session with its answers' page views (each with its id), oldest first."""
@@ -118,3 +182,26 @@ class Sessions:
     def delete(self, session_id: int) -> bool:
         with self.lock, self.db:
             return self.db.execute("DELETE FROM sessions WHERE id = ?", (session_id,)).rowcount > 0
+
+    # ---- reports (workflows.py / report_recipes.py dicts, kept whole so every download works later)
+    def add_report(self, report: dict) -> int:
+        with self.lock, self.db:
+            return self.db.execute(
+                "INSERT INTO reports (kind, title, created, report) VALUES (?, ?, ?, ?)",
+                (report.get("kind", ""), report["title"], report.get("created") or _now(),
+                 json.dumps(report, ensure_ascii=False, default=str))).lastrowid
+
+    def report(self, report_id: int) -> dict | None:
+        with self.lock:
+            row = self.db.execute("SELECT report FROM reports WHERE id = ?", (report_id,)).fetchone()
+        return json.loads(row["report"]) if row else None
+
+    def reports(self, limit: int = 100) -> list[dict]:
+        """Newest first: id, kind, title, created."""
+        with self.lock:
+            return [dict(r) for r in self.db.execute(
+                "SELECT id, kind, title, created FROM reports ORDER BY id DESC LIMIT ?", (limit,))]
+
+    def delete_report(self, report_id: int) -> bool:
+        with self.lock, self.db:
+            return self.db.execute("DELETE FROM reports WHERE id = ?", (report_id,)).rowcount > 0

@@ -215,6 +215,23 @@ def test_web_report_endpoints():
         status, body = test_web._request(app, "GET", f"/api/report?id={done['id']}&fmt=pdf")
         assert status == 200 and body[:5] == b"%PDF-"
         assert test_web._request(app, "GET", f"/api/report?id={done['id']}&fmt=exe")[0] == 404
+        # saved: after a restart it's listed, reopens, downloads, and can be deleted
+        import tempfile
+        import sessions
+        saved = sessions.Sessions(Path(tempfile.mkdtemp()) / "s.db")
+        app.saved = saved
+        workflows.compare = lambda *a, **k: report
+        status, body = test_web._request(app, "POST", "/api/report", {"kind": "compare", "countries": "Kenya, Ghana"})
+        rid = json.loads(body.decode().splitlines()[-1])["id"]
+        app.reports.clear()  # as if web.py had restarted
+        listed = json.loads(test_web._request(app, "GET", "/api/reports")[1])["reports"]
+        assert rid.isdigit() and [r["id"] for r in listed] == [int(rid)] and listed[0]["title"] == report["title"]
+        view = json.loads(test_web._request(app, "GET", f"/api/reports/view?id={rid}")[1])
+        assert view["title"] == report["title"] and view["id"] == rid and "results" not in view
+        assert test_web._request(app, "GET", f"/api/report?id={rid}&fmt=json")[0] == 200
+        assert test_web._request(app, "POST", "/api/reports/delete", {"id": int(rid)})[0] == 200
+        assert test_web._request(app, "GET", f"/api/reports/view?id={rid}")[0] == 404
+        app.saved = None
         status, body = test_web._request(app, "GET", "/api/report-options")
         assert status == 200 and "Kenya" in json.loads(body)["countries"]
         assert test_web._request(app, "POST", "/api/report", {"kind": "compare"}, origin="https://evil.example")[0] == 403

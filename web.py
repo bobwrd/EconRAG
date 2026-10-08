@@ -40,6 +40,7 @@ import report_recipes
 import sessions
 import verify
 import workflows
+from analyst import Stopped
 from groq_client import GroqUnavailable
 
 ROOT = Path(__file__).resolve().parent
@@ -50,6 +51,7 @@ PORT = 8765
 KEEP_ANSWERS = 50  # answers kept in memory for CSV downloads and technical rewrites (saved ones reload)
 STATIC = {"/": ("index.html", "text/html; charset=utf-8"),
           "/app.js": ("app.js", "text/javascript; charset=utf-8"),
+          "/theme.js": ("theme.js", "text/javascript; charset=utf-8"),
           "/style.css": ("style.css", "text/css; charset=utf-8"),
           "/glossary.json": ("glossary.json", "application/json; charset=utf-8")}
 CHART_TYPES = {".png": "image/png", ".gif": "image/gif", ".svg": "image/svg+xml"}
@@ -196,6 +198,45 @@ def session_zip(app, session_id: int) -> bytes | None:
                    "answer_N/: every value the model saw for answer N (what_the_model_saw.csv, tool_calls.json).\n"
                    "For every year of each series, use the Download button on that answer in the web page.\n")
     return buf.getvalue()
+
+
+# ------------------------------------------------------------------ follow-up suggestions (no tokens)
+MAX_FOLLOWUPS = 3
+
+
+def followups(question: str, results: list) -> list[str]:
+    """Up to 3 next questions, written by Python from what this answer looked up (the page puts
+    a clicked one in the question box to edit). Plain templates, no model, no tokens."""
+    out = []
+    for name, args, result in results:
+        if not isinstance(result, dict) or result.get("error"):
+            continue
+        source = args.get("source", "worldbank")
+        if name == "get_data" and source in ("worldbank", "imf", "longrun") and result.get("economies"):
+            what = (result.get("name") or args.get("series", "")).split(" (")[0].split(", ")[0]
+            if what[1:2].islower():  # "Life expectancy" -> "life expectancy"; "GDP per capita" stays
+                what = what[0].lower() + what[1:]
+            places = [e["economy"] for e in result["economies"] if e.get("economy")][:4]
+            if not what or not places:
+                continue
+            if len(places) == 1:
+                out += [f"How does {places[0]} compare with its region and income group on {what}?",
+                        f"How has {what} in {places[0]} changed since 1990?"]
+            else:
+                out += [f"Which of {', '.join(places[:-1])} and {places[-1]} improved fastest on {what}?"]
+        elif name == "county_profile" and result.get("county"):
+            out += [f"Which nearby counties have higher upward mobility than {result['county']}?",
+                    f"How does {result['county']} compare for Black and white children?"]
+        elif name in ("search_papers", "search_literature") and args.get("query"):
+            out += [f"What do randomized evaluations find about {args['query']}?"]
+        elif name == "search_evaluations" and args.get("query"):
+            out += [f"Are there reviews or meta-analyses of {args['query']}?"]
+    seen, picked = {question.strip().lower()}, []
+    for q in out:
+        if q.lower() not in seen:
+            seen.add(q.lower())
+            picked.append(q)
+    return picked[:MAX_FOLLOWUPS]
 
 
 # ------------------------------------------------------------------ evidence inspector (no tokens)
@@ -349,6 +390,7 @@ class App:
         self.models, self.analyst, self.pool, self.port = models, analyst, pool, port
         self.saved = saved  # sessions.Sessions, or None: answers then live in memory only
         self.session_id = None  # the conversation new answers join; None = start one on the next question
+        self.stop = threading.Event()  # set by the Stop button: the running question ends at its next step
         self.answer_locally = answer_locally  # (question) -> str, or None when offline isn't possible
         self.lock = threading.Lock()  # one question (or rewrite) at a time
         self.answers: dict[str, dict] = {}
@@ -362,7 +404,7 @@ class App:
         where = self.answers if where is None else where
         if rid is None:
             # "m" ids can't collide with saved answers' ids
-            rid = ("m" if self.saved and where is self.answers else "") + str(self.next_id)
+            rid = ("m" if self.saved else "") + str(self.next_id)
             self.next_id += 1
         where[rid] = record
         for old in list(where)[:-KEEP_ANSWERS]:
@@ -448,14 +490,29 @@ class App:
                                                emit=say, write=write, library=self.library or None)
         else:
             raise ValueError("unknown report kind")
-        rid = self.store(report, self.reports)
-        return report_view(report, rid)
+        rid = None
+        if self.saved:  # kept, so it can be reopened and downloaded after a restart
+            try:
+                rid = self.store(report, self.reports, rid=str(self.saved.add_report(report)))
+            except sqlite3.Error as e:
+                print(f"  (couldn't save this report: {e}; it's kept until web.py stops)", flush=True)
+        return report_view(report, rid or self.store(report, self.reports))
+
+    def report_by_id(self, rid: str) -> dict | None:
+        """A report: from memory, or reloaded from the saved ones."""
+        report = self.reports.get(rid)
+        if report is None and self.saved and rid.isdigit():
+            report = self.saved.report(int(rid))
+            if report is not None:
+                self.store(report, self.reports, rid=rid)
+        return report
 
     def ask(self, question: str, emit) -> dict:
         """Answers one question, sending progress through emit(event dict)."""
         if self.warm:
             self.warm.result()
         started = time.time()
+        self.stop.clear()
         events = []  # the progress trail, saved so a reopened answer shows it too
 
         def emit(event: dict, send=emit):
@@ -466,15 +523,19 @@ class App:
         result = None
         if self.analyst:
             self.analyst.on_event = lambda kind, text, **data: emit({"kind": kind, "text": text.strip(), **data})
+            self.analyst.should_stop = self.stop.is_set
             groq_client.notify = lambda text: emit({"kind": "notice", "text": text.strip()})
             try:
                 self.analyst.run(question)
                 result = dict(self.analyst.last_result)
                 record["evidence"] = self.analyst.evidence()
+            except Stopped:  # discarded: not saved, and follow-ups don't remember it
+                print("  (stopped)", flush=True)
+                return {"stopped": True, "seconds": round(time.time() - started)}
             except GroqUnavailable as e:
                 emit({"kind": "notice", "text": f"Groq unavailable ({e}). Answering offline with phi3.5."})
             finally:
-                self.analyst.on_event = None
+                self.analyst.on_event = self.analyst.should_stop = None
                 groq_client.notify = _print
         if result is None:
             if not self.answer_locally:
@@ -493,7 +554,8 @@ class App:
         view = {**result, "seconds": round(time.time() - started),
                 "charts": ["/charts/" + Path(p).name for p in result["charts"]],
                 "technical": technical_details(record["evidence"]["results"]), "events": events,
-                "numbers": number_sources(result["answer"], record["evidence"])}
+                "numbers": number_sources(result["answer"], record["evidence"]),
+                "followups": followups(question, record["evidence"]["results"])}
         return {**view, "id": self.save(record, view), "session": self.session_id}
 
 
@@ -567,9 +629,17 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, b"not found", "text/plain")
         if url.path == "/api/status":
             return self._json(status(self.app))
-        if url.path == "/api/sessions":
-            return self._json({"sessions": self.app.saved.list() if self.app.saved else [],
+        if url.path == "/api/sessions":  # ?q= searches titles, questions and answers
+            q = parse_qs(url.query).get("q", [""])[0][:200]
+            return self._json({"sessions": self.app.saved.list(query=q) if self.app.saved else [],
                                "current": self.app.session_id, "saving": bool(self.app.saved)})
+        if url.path == "/api/reports":
+            return self._json({"reports": self.app.saved.reports() if self.app.saved else [],
+                               "saving": bool(self.app.saved)})
+        if url.path == "/api/reports/view":
+            rid = parse_qs(url.query).get("id", [""])[0]
+            report = self.app.report_by_id(rid)
+            return self._json(report_view(report, rid)) if report else self._json({"error": "unknown report"}, 404)
         if url.path == "/api/sessions/export":
             query = parse_qs(url.query)
             try:
@@ -586,7 +656,7 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(groq_client.usage())
         if url.path == "/api/report":
             query = parse_qs(url.query)
-            report = self.app.reports.get(query.get("id", [""])[0])
+            report = self.app.report_by_id(query.get("id", [""])[0])
             fmt = query.get("fmt", [""])[0]
             if not report or fmt not in report_export.FORMATS:
                 return self._json({"error": "unknown report or format"}, 404)
@@ -634,9 +704,25 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": f"Groq unavailable: {e}"}, 503)
             finally:
                 self.app.lock.release()
+        if path == "/api/stop":  # no lock: the running question holds it; it ends at its next step
+            self.app.stop.set()
+            return self._json({"ok": True})
         if path == "/api/reset":
             self.app.new_conversation()
             return self._json({"ok": True})
+        if path in ("/api/sessions/rename", "/api/sessions/pin", "/api/reports/delete"):
+            body = self._body()
+            try:
+                item = int(body.get("id"))
+            except (TypeError, ValueError):
+                return self._json({"error": "unknown item"}, 404)
+            saved = self.app.saved
+            ok = bool(saved) and (saved.rename(item, str(body.get("title") or "")) if path.endswith("rename") else
+                                  saved.pin(item, bool(body.get("pinned"))) if path.endswith("pin") else
+                                  saved.delete_report(item))
+            if ok and path.endswith("reports/delete"):
+                self.app.reports.pop(str(item), None)
+            return self._json({"ok": True}) if ok else self._json({"error": "unknown item or empty name"}, 404)
         if path in ("/api/sessions/open", "/api/sessions/delete"):
             try:
                 session_id = int(self._body().get("id"))

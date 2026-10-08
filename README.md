@@ -51,7 +51,7 @@ words.
 **Reports** (in the web page's Reports tab, or from the command line). Python fetches every number
 and builds every table; the model writes only a short summary, which is fact-checked (untick "Write
 a summary" and Python lists the highlights instead, for free). Download as PDF, Word, Markdown,
-LaTeX (with BibTeX), or the data itself.
+LaTeX (with BibTeX), JSON, CSV tables, or the data itself.
 - **Compare countries**: 2-6 countries on income, growth, poverty, health, education and more (~2-5K Groq tokens).
 - **Country brief**: one country against its income group and region; long-run growth, the World
   Bank's growth forecast, differences between regions, and J-PAL studies and library papers about it (~3-5K).
@@ -120,6 +120,7 @@ need no setup. Free tiers: Groq allows about 15 questions a day; OpenAlex about 
                                                              # (--no-summary on any of them: no Groq tokens)
 .venv/bin/python longrun.py "South Korea" Ghana  # long-run comparison from the command line
 .venv/bin/python data_manifest.py                # list data/ files with checksums (--check: what changed)
+.venv/bin/python groq_client.py                  # Groq tokens used in the last 24 hours (of 200,000)
 
 .venv/bin/python tests/run_fast.py               # the quick tests in one go (--ci: those needing no data/)
 .venv/bin/python tests/test_tools.py             # tool tests (no API usage)
@@ -147,5 +148,5 @@ Optional: `.venv/bin/pip install -e .` adds the commands `econrag-web`, `econrag
 GitHub Actions runs the tests that need no data files on every push (`.github/workflows/tests.yml`).
 
 See `NOTES.md` for architecture, design decisions, and known pitfalls, `ROADMAP.md` for
-progress and what's next, `new-roadmap.md` for the hardening plan, and `SECURITY.md` for the
+progress and what's next, `new-roadmap.md` for the plan for packaging, sessions and reports, and `SECURITY.md` for the
 security model.

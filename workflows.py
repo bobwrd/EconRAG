@@ -5,7 +5,7 @@ Reports people repeat (ROADMAP Phase 5). Each report is a fixed recipe:
   2. compute — growth rates, ranks, gaps in Python; Python writes every table
   3. write   — ONE Groq request (no tools) turns a compact fact sheet into prose,
                checked by verify.py; one revision request only if it fails
-  4. export  — report_export.py: PDF, Word, Markdown, LaTeX, BibTeX, data zip
+  4. export  — report_export.py: PDF, Word, Markdown, LaTeX, BibTeX, JSON, CSV, data zip
 
 So tables can't contain invented numbers, a report costs ~2-5K Groq tokens
 (a chat question: 10-30K), and the same inputs give the same structure.

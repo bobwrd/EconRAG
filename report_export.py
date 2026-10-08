@@ -1,11 +1,14 @@
 """
 Turns a report from workflows.py into files: PDF (fpdf2), Word (python-docx),
-Markdown and LaTeX (zips with their charts and references.bib), BibTeX, and the
-data zip (the same as for chat answers: full series + what was fetched).
+Markdown and LaTeX (zips with their charts and references.bib), BibTeX, JSON (the
+report as data), CSV (one file per table, zipped), and the data zip (the same as
+for chat answers: full series + what was fetched).
 Every format is built from the same report dict, so they always agree.
 """
 
+import csv
 import io
+import json
 import re
 import zipfile
 from pathlib import Path
@@ -303,6 +306,41 @@ def docx(report: dict) -> bytes:
     return buf.getvalue()
 
 
+# ------------------------------------------------------------------ JSON and CSV
+def as_json(report: dict) -> str:
+    """The report as data for other programs: everything the other formats show, plus the
+    fact sheet the summary was written from. Raw tool results stay out (the data zip has them);
+    charts are file names, as in the Markdown zip."""
+    out = {k: report[k] for k in ("title", "created", "summary", "about", "sources") if k in report}
+    out["sections"] = [{**sec, "charts": [Path(p).name for p in sec.get("charts", [])]} for sec in report["sections"]]
+    if "facts" in report:
+        out["facts"] = report["facts"]
+    return json.dumps(out, ensure_ascii=False, indent=2, default=str) + "\n"
+
+
+def _csv(header: list, rows: list) -> bytes:
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(header)
+    writer.writerows(rows)
+    return buf.getvalue().encode("utf-8-sig")  # the BOM makes Excel read accents correctly
+
+
+def tables_zip(report: dict) -> bytes:
+    """One CSV per table (and per list of studies or papers), numbered in report order. Cells
+    are as shown in the report (e.g. "1,234 (2023)"); the data zip has the plain numbers."""
+    import workflows
+    files = {}
+    for sec in report["sections"]:
+        name = f"{len(files) + 1:02d}_{workflows.slug(sec['heading'])}.csv"
+        if sec.get("table"):
+            files[name] = _csv(sec["table"]["columns"], sec["table"]["rows"])
+        elif sec.get("items"):
+            files[name] = _csv(["title", "url", "text"],
+                               [[i.get("title", ""), i.get("url", ""), i.get("text", "")] for i in sec["items"]])
+    return _zip(files)
+
+
 # ------------------------------------------------------------------ bundles
 def _zip(files: dict[str, bytes | str | Path]) -> bytes:
     buf = io.BytesIO()
@@ -333,6 +371,8 @@ FORMATS = {  # name -> (file name, media type)
     "md": ("report_markdown.zip", "application/zip"),
     "tex": ("report_latex.zip", "application/zip"),
     "bib": ("references.bib", "application/x-bibtex"),
+    "json": ("report.json", "application/json"),
+    "csv": ("tables_csv.zip", "application/zip"),
     "data": ("data.zip", "application/zip"),
 }
 
@@ -349,6 +389,10 @@ def export(report: dict, fmt: str, wb=None) -> bytes:
                      **_charts(report, "figures", {".png"})})
     if fmt == "bib":
         return bibtex(report).encode()
+    if fmt == "json":
+        return as_json(report).encode()
+    if fmt == "csv":
+        return tables_zip(report)
     if fmt == "data":
         return data_zip(report, wb)
     raise ValueError(f"unknown format {fmt!r}; choose from {', '.join(FORMATS)}")

@@ -6,6 +6,7 @@ tokens: the summary request goes to a scripted fake. World Bank data is real
     .venv/bin/python tests/test_reports.py
 """
 
+import csv
 import io
 import json
 import sys
@@ -119,6 +120,15 @@ def test_every_export_format():
     tex = zipfile.ZipFile(io.BytesIO(report_export.export(report, "tex"))).read("report.tex").decode()
     assert r"5\% \& \$3" in tex and r"\textbf{Côte d'Ivoire} $\geq$" in tex and r"\begin{itemize}" in tex
     assert report_export.export(report, "bib").decode().startswith("@misc{worldbank_wdi,")
+    as_json = json.loads(report_export.export(report, "json"))
+    assert as_json["title"] == report["title"] and "results" not in as_json and "facts" in as_json
+    assert as_json["sections"][0]["table"] == report["sections"][0]["table"]
+    assert all("/" not in c for sec in as_json["sections"] for c in sec["charts"])
+    tables = zipfile.ZipFile(io.BytesIO(report_export.export(report, "csv")))
+    first = tables.namelist()[0]
+    rows = list(csv.reader(io.StringIO(tables.read(first).decode("utf-8-sig"))))
+    assert first.startswith("01_") and rows[0] == report["sections"][0]["table"]["columns"]
+    assert rows[1:] == [[str(c) for c in r] for r in report["sections"][0]["table"]["rows"]]
     data = zipfile.ZipFile(io.BytesIO(report_export.export(report, "data", tt.WB)))
     assert {"full_series.csv", "what_the_model_saw.csv", "README.txt"} <= set(data.namelist())
 

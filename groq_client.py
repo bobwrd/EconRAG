@@ -5,10 +5,17 @@ token cap, outage, bad key), the same request goes to OpenRouter if
 OPENROUTER_API_KEY is set — OPENROUTER_MODEL, default the same gpt-oss-120b.
 Short per-minute rate limits still raise, so callers wait for Groq instead.
 Every failure raises GroqUnavailable so callers can fall back to the local model.
+
+Token use: each reply's token counts (already in every reply, nothing extra is sent)
+are added to data/usage/<date>.jsonl; usage() totals the last 24 hours against
+Groq's daily cap. `python groq_client.py` prints it.
 """
 
+import json
 import os
 import time
+from datetime import datetime, timedelta
+from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
@@ -38,6 +45,9 @@ def notify(text: str):
     print(text, flush=True)
 
 
+USAGE_DIR = Path(__file__).resolve().parent / "data" / "usage"
+DAILY_TOKEN_LIMIT = 200_000  # gpt-oss-120b on Groq's free tier, per rolling 24 hours
+
 # Free tier (Oct 2026): 8,000 tokens/minute and 1,000 requests/day for every model;
 # gpt-oss-120b also has 200,000 tokens per rolling 24 hours (others unchecked). The daily token cap is NOT in the
 # x-ratelimit-* headers; it only appears in the 429 error message.
@@ -63,6 +73,7 @@ def post(payload: dict, stream: bool = False) -> requests.Response:
         try:
             response = _post(GROQ_URL, GROQ_API_KEY, GROQ_MODEL, payload, stream, "Groq")
             last_provider = "groq"
+            _record(response, stream)
             return response
         except GroqUnavailable as e:
             if not (OPENROUTER_API_KEY and _wants_backup(e)):
@@ -75,7 +86,62 @@ def post(payload: dict, stream: bool = False) -> requests.Response:
                      # only route to OpenRouter providers that support every parameter sent (tools)
                      {**payload, "provider": {"require_parameters": True}}, stream, "OpenRouter")
     last_provider = "openrouter"
+    _record(response, stream)
     return response
+
+
+# ------------------------------------------------------------------ token use
+def _record(response: requests.Response, stream: bool):
+    """Adds the reply's token counts to today's file. Streamed replies (eval/run_eval.py
+    only) carry no counts and aren't recorded; a failure here never fails the request."""
+    if stream:
+        return
+    try:
+        record_usage(last_provider, response.json().get("usage") or {})
+    except (ValueError, OSError):
+        pass
+
+
+def record_usage(provider: str, usage: dict, now: datetime | None = None, folder: Path | None = None):
+    now = now or datetime.now()
+    folder = folder or USAGE_DIR
+    folder.mkdir(parents=True, exist_ok=True)
+    line = {"time": now.isoformat(timespec="seconds"), "provider": provider,
+            "prompt": usage.get("prompt_tokens", 0), "completion": usage.get("completion_tokens", 0),
+            "total": usage.get("total_tokens", 0)}
+    with (folder / f"{now:%Y-%m-%d}.jsonl").open("a") as f:
+        f.write(json.dumps(line) + "\n")
+
+
+def usage(now: datetime | None = None, folder: Path | None = None) -> dict:
+    """Tokens and requests in the last 24 hours, per provider, and what's left of Groq's cap.
+    Counts only what this copy sent: other programs using the same key aren't seen."""
+    now = now or datetime.now()
+    folder = folder or USAGE_DIR
+    since = now - timedelta(hours=24)
+    out = {"groq": 0, "openrouter": 0, "requests": 0}
+    for day in sorted({since.date(), now.date()}):
+        path = folder / f"{day:%Y-%m-%d}.jsonl"
+        if not path.exists():
+            continue
+        for raw in path.read_text().splitlines():
+            try:
+                line = json.loads(raw)
+                if datetime.fromisoformat(line["time"]) > since:
+                    out[line["provider"]] = out.get(line["provider"], 0) + line["total"]
+                    out["requests"] += 1
+            except (ValueError, KeyError):
+                continue
+    out["limit"] = DAILY_TOKEN_LIMIT
+    out["groq_left"] = max(0, DAILY_TOKEN_LIMIT - out["groq"])
+    return out
+
+
+if __name__ == "__main__":
+    u = usage()
+    print(f"Last 24 hours: {u['groq']:,} Groq tokens of {u['limit']:,} ({u['groq_left']:,} left), "
+          f"{u['openrouter']:,} OpenRouter tokens, {u['requests']} requests.\n"
+          "Counts only this copy's requests (data/usage/).")
 
 
 def _post(url: str, key: str | None, model: str, payload: dict, stream: bool, name: str) -> requests.Response:

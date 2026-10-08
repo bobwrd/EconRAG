@@ -176,6 +176,10 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
   Found while building it: World Bank and long-run line charts (chat too) drew only first/max/min/
   latest when a series was short enough to be labeled "series" rather than "sampled" — fixed in
   `charts._points`. Tests: `tests/test_reports.py`.
+  JSON and CSV exports (Oct 9 2026): `report.json` = the report dict without raw tool results (charts
+  as file names, fact sheet included); `tables_csv.zip` = one CSV per table or list of studies,
+  numbered in report order, cells as displayed ("1,234 (2023)"), UTF-8 with BOM so Excel reads
+  accents.
 - `report_recipes.py` — the other three reports, same engine (`workflows.write_summary`, now with an
   optional citation check; exports unchanged apart from sections that are a list of links instead
   of a table, column alignment for text columns, and paper sources in the BibTeX):
@@ -306,9 +310,14 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
   (devecon, manifest, setup), which is what `.github/workflows/tests.yml` runs (macOS, Python 3.13,
   no keys). Checked in a copy without data/ on Oct 9; not yet run on GitHub.
 - `SECURITY.md` — the security model (localhost only, the sandbox's limits). `new-roadmap.md` — the
-  hardening plan (packaging, CI, logging, data versions, sessions).
+  plan for what's left: packaging, saved sessions, report extras.
 - `verify.py` — fact-checks analyst answers (numbers + citations vs tool results).
-- `groq_client.py` — Groq API call + `GroqUnavailable`; `GROQ_MODEL` lives here.
+- `groq_client.py` — Groq API call + `GroqUnavailable`; `GROQ_MODEL` lives here. Since Oct 9 2026 it
+  also adds each reply's `usage` counts to `data/usage/<date>.jsonl` (provider, prompt, completion,
+  total; nothing extra is sent); `usage()` totals the last 24 hours (Groq's cap is rolling) against
+  `DAILY_TOKEN_LIMIT` 200,000. Shown in the web page's header (`GET /api/usage`, orange at 80%) and
+  by `python groq_client.py`. Counts this copy only, and not `ask_groq`'s streamed replies (eval only).
+  Tests that use the real `post` point `USAGE_DIR` at a temporary folder.
 - `tests/test_tools.py` — tool + analyst-loop tests (fake Groq, zero tokens, ~3s). Run after
   every change: `.venv/bin/python tests/test_tools.py`.
 - `eval/benchmark.py` — 31-question benchmark of the analyst (dev data, US tools, traps,

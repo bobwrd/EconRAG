@@ -271,6 +271,7 @@ async function rewrite(btn, id, out) {
       : '<p class="badge ok">✓ Numbers and citations found in the sources</p>';
     out.innerHTML = flag + markdown(r.text) + `<p class="muted">${(r.tokens || 0).toLocaleString()} tokens</p>`;
     highlightTerms(out);
+    loadUsage();
     btn.hidden = true;
     btn.nextElementSibling.hidden = true;
   } catch (e) {
@@ -313,7 +314,7 @@ async function ask(question) {
         buf = buf.slice(nl + 1);
         if (!line) continue;
         const ev = JSON.parse(line);
-        if (ev.kind === "done") { working.remove(); showResult(card, ev); }
+        if (ev.kind === "done") { working.remove(); showResult(card, ev); loadUsage(); }
         else if (ev.kind === "error") throw new Error(ev.text);
         else { addStep(steps, ev); steps.append(working); }
       }
@@ -351,7 +352,7 @@ async function readStream(res, onEvent) {
   }
 }
 
-const FORMAT_LABELS = {pdf: "PDF", docx: "Word", md: "Markdown (zip)", tex: "LaTeX (zip)", bib: "BibTeX", data: "Data (zip)"};
+const FORMAT_LABELS = {pdf: "PDF", docx: "Word", md: "Markdown (zip)", tex: "LaTeX (zip)", bib: "BibTeX", json: "JSON", csv: "Tables (CSV zip)", data: "Data (zip)"};
 
 function tableHtml(t) {
   return '<div class="table"><table><thead><tr>' + t.columns.map(c => `<th>${esc(c)}</th>`).join("") +
@@ -441,7 +442,7 @@ async function makeReport() {
     if (!res.ok) throw new Error((await res.json()).error || res.statusText);
     let finished = false;
     await readStream(res, ev => {
-      if (ev.kind === "done") { finished = true; renderReport(card, ev); }
+      if (ev.kind === "done") { finished = true; renderReport(card, ev); loadUsage(); }
       else if (ev.kind === "error") throw new Error(ev.text);
       else add(ev.text);
     });
@@ -487,6 +488,19 @@ async function loadStatus() {
   } catch (e) { /* the page still works */ }
 }
 
+// Groq's free daily cap, from the token counts in its replies (this copy's requests only)
+async function loadUsage() {
+  try {
+    const u = await (await fetch("/api/usage")).json();
+    const el = $("#usage");
+    el.textContent = `Groq tokens, last 24 hours: ${u.groq.toLocaleString()} of ${u.limit.toLocaleString()}` +
+      (u.openrouter ? ` · OpenRouter backup: ${u.openrouter.toLocaleString()}` : "");
+    el.title = "Counted from the replies this copy received; other programs using the same key aren't included.";
+    el.classList.toggle("near", u.groq >= 0.8 * u.limit);
+    el.hidden = false;
+  } catch (e) { /* the page still works */ }
+}
+
 function toggle(id) {
   for (const p of ["setup", "glossary"]) $("#" + p).hidden = p === id ? !$("#" + p).hidden : true;
 }
@@ -494,6 +508,7 @@ function toggle(id) {
 document.addEventListener("DOMContentLoaded", () => {
   loadGlossary();
   loadStatus();
+  loadUsage();
   const q = $("#question");
   $("#ask").addEventListener("submit", e => { e.preventDefault(); const v = q.value; q.value = ""; ask(v); });
   q.addEventListener("keydown", e => {

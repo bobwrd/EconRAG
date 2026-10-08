@@ -59,6 +59,8 @@ code, pre { font: 0.88em/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; }
 .top h1 { font-size: 1.05rem; margin: 0; letter-spacing: -0.01em; }
 .local { margin: 0; font-size: 0.8rem; color: var(--muted); }
 .local::before { content: "● "; color: var(--ok); }
+.usage { margin: 0; font-size: 0.8rem; color: var(--muted); }
+.usage.near { color: var(--warn); }
 nav { display: flex; gap: 6px; flex-wrap: wrap; }
 .ghost {
   background: transparent; border: 1px solid var(--line); border-radius: 8px; padding: 5px 10px; font-size: 0.88rem;

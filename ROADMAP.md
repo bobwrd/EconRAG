@@ -42,9 +42,9 @@ won't change. This project wins on what they can't do reliably:
 The Oct 6 work (benchmark fixes, peer groups, `devecon.py`, `longrun.py`, the development library,
 multi-column PDF extraction) is merged into `main` and was benchmarked on Oct 7 (27/28, below).
 
-Next: hardening (packaging, CI, logging, data versions, sessions) is planned in `new-roadmap.md`;
-its quick wins were done Oct 9 (`pyproject.toml`, `tests/run_fast.py` + GitHub Actions,
-`data_manifest.py`, `SECURITY.md`).
+Next: packaging, saved sessions and report extras are planned in `new-roadmap.md` (testing/CI,
+logging, data management, contributor docs and security were dropped from it Oct 9). Done Oct 9 (`pyproject.toml`, `tests/run_fast.py` + GitHub Actions,
+`data_manifest.py`, `SECURITY.md`). Also done Oct 9: token use against Groq's daily cap, JSON/CSV report exports.
 
 ## Phase 0: Measure cheaply
 

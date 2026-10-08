@@ -105,6 +105,23 @@ def test_server_refuses_other_hosts_sites_and_paths():
         server.shutdown()
 
 
+def test_usage_endpoint_reports_the_last_24_hours():
+    import tempfile
+    import groq_client
+    app, server = _serve(tt._bot())
+    saved = groq_client.USAGE_DIR
+    groq_client.USAGE_DIR = Path(tempfile.mkdtemp())
+    try:
+        groq_client.record_usage("groq", {"total_tokens": 1234})
+        status, body = _request(app, "GET", "/api/usage")
+        u = json.loads(body)
+        assert status == 200 and u["groq"] == 1234 and u["limit"] == 200_000 and u["groq_left"] == 198_766, u
+        assert _request(app, "GET", "/api/usage", host="evil.example:80")[0] == 403
+    finally:
+        groq_client.USAGE_DIR = saved
+        server.shutdown()
+
+
 def test_full_series_specs():
     results = [("get_data", {"series": "SI.POV.DDAY", "countries": ["all"]}, {"ranked": []}),
                ("get_data", {"series": "lifexp", "source": "gdl", "countries": ["Kenya"]}, {}),

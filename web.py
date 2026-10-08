@@ -451,6 +451,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, b"not found", "text/plain")
         if url.path == "/api/status":
             return self._json(status(self.app))
+        if url.path == "/api/usage":  # tokens in the last 24 hours (groq_client.usage)
+            return self._json(groq_client.usage())
         if url.path == "/api/report":
             query = parse_qs(url.query)
             report = self.app.reports.get(query.get("id", [""])[0])

@@ -14,6 +14,7 @@ or FRED revises old data, update them deliberately.
 import json
 import re
 import sys
+import tempfile
 import traceback
 from pathlib import Path
 
@@ -505,8 +506,9 @@ def test_openrouter_backup_only_for_long_groq_outages():
             return replies.pop(0)
         return Resp(200, {"choices": [{"message": {"content": "ok"}}]})
 
-    saved = (gc._session.post, gc.OPENROUTER_API_KEY, gc._groq_blocked_until)
+    saved = (gc._session.post, gc.OPENROUTER_API_KEY, gc._groq_blocked_until, gc.USAGE_DIR)
     gc._session.post, gc.OPENROUTER_API_KEY, gc._groq_blocked_until = fake_post, "test-key", 0.0
+    gc.USAGE_DIR = Path(tempfile.mkdtemp())  # token counts go to a temporary folder, not data/usage
     try:
         replies = [Resp(429, {"error": {"message": "Rate limit ... tokens per minute"}}, "6")]
         try:
@@ -522,9 +524,24 @@ def test_openrouter_backup_only_for_long_groq_outages():
         assert gc.last_provider == "openrouter" and calls[-1] == (gc.OPENROUTER_URL, gc.OPENROUTER_MODEL)
         gc.post({"messages": []})  # Groq is skipped while its daily cap lasts
         assert [u for u, _ in calls].count(gc.GROQ_URL) == 3, calls
+        assert gc.usage()["requests"] == 3  # each answered request is counted, failed ones aren't
     finally:
-        gc._session.post, gc.OPENROUTER_API_KEY, gc._groq_blocked_until = saved
+        gc._session.post, gc.OPENROUTER_API_KEY, gc._groq_blocked_until, gc.USAGE_DIR = saved
         gc.last_provider = "groq"
+
+
+def test_token_use_is_totaled_over_the_last_24_hours():
+    import groq_client as gc
+    from datetime import datetime, timedelta
+    folder, now = Path(tempfile.mkdtemp()), datetime(2026, 10, 9, 10, 0)
+    for hours_ago, provider, total in ((30, "groq", 50_000), (20, "groq", 30_000), (1, "groq", 12_000),
+                                       (1, "openrouter", 9_000)):
+        gc.record_usage(provider, {"prompt_tokens": total - 100, "completion_tokens": 100, "total_tokens": total},
+                        now - timedelta(hours=hours_ago), folder)
+    assert sorted(p.name for p in folder.iterdir()) == ["2026-10-08.jsonl", "2026-10-09.jsonl"]
+    u = gc.usage(now, folder)  # the 30-hour-old request has dropped out of Groq's rolling window
+    assert (u["groq"], u["openrouter"], u["requests"], u["groq_left"]) == (42_000, 9_000, 3, 158_000), u
+    assert gc.usage(now, Path(tempfile.mkdtemp()))["groq"] == 0
 
 
 def test_followups_may_reuse_numbers_from_previous_answers():

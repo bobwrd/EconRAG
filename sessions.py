@@ -196,6 +196,13 @@ class Sessions:
             row = self.db.execute("SELECT report FROM reports WHERE id = ?", (report_id,)).fetchone()
         return json.loads(row["report"]) if row else None
 
+    def latest_report(self, kind: str, title: str) -> dict | None:
+        """The most recent saved report of this kind and title (the same country or countries), if any."""
+        with self.lock:
+            row = self.db.execute("SELECT report FROM reports WHERE kind = ? AND title = ? ORDER BY id DESC LIMIT 1",
+                                  (kind, title)).fetchone()
+        return json.loads(row["report"]) if row else None
+
     def reports(self, limit: int = 100) -> list[dict]:
         """Newest first: id, kind, title, created."""
         with self.lock:

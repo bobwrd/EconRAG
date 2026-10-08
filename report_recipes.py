@@ -27,6 +27,7 @@ from types import SimpleNamespace
 
 import charts
 import compute
+import devecon
 import openalex
 import verify
 import workflows
@@ -402,6 +403,7 @@ def country_brief(wb, country: str, emit=lambda *_: None, write: bool = True, st
                                  results=growth_results))
 
     sections.append(imf_outlook(wb, code, name, log, emit))
+    sections.append(sources_agree(wb, code, name, start, end, log, emit))
     sections.append(long_run(code, name, log, emit))
     peer_section("Poverty and inequality", POVERTY,
                  ["The poverty profile report shows every survey year, the $8.30 line and the number of poor."])
@@ -464,6 +466,125 @@ def imf_outlook(wb, code: str, name: str, log, emit) -> dict:
                                                       enumerate(years)], "rows": rows},
                    [f"IMF {edition}: {years[1]} onward are projections and {years[0]} is an estimate for many "
                     "countries. Revised every April and October."])
+
+
+# The same measure from the World Bank and the IMF: (label, World Bank id, IMF id, World Bank divisor, kind).
+# Government debt is left out: the World Bank's is central government, the IMF's general government.
+CROSS_CHECKS = [("Real GDP growth (%)", "NY.GDP.MKTP.KD.ZG", "NGDP_RPCH", 1, "rate"),
+                ("Inflation, consumer prices (%)", "FP.CPI.TOTL.ZG", "PCPIPCH", 1, "rate"),
+                ("Unemployment rate (%)", "SL.UEM.TOTL.ZS", "LUR", 1, "rate"),
+                ("Current account balance (% of GDP)", "BN.CAB.XOKA.GD.ZS", "BCA_NGDPD", 1, "rate"),
+                ("Population (millions)", "SP.POP.TOTL", "LP", 1e6, "level"),
+                ("GDP per capita, PPP (current international $)", "NY.GDP.PCAP.PP.CD", "PPPPC", 1, "level")]
+RATE_TOLERANCE = 0.5   # percentage points: rates further apart than this "differ"
+LEVEL_TOLERANCE = 3.0  # percent: levels further apart than this "differ"
+CROSS_YEARS = 10       # years compared per measure (the latest years both sources have)
+
+
+def _gap(a: float, b: float, kind: str) -> tuple[float, bool]:
+    """(difference, within tolerance): percentage points for rates, percent of the first for levels.
+    Judged on the difference as shown (one decimal), so a row reading 0.5 points never says "no"."""
+    d = round(b - a if kind == "rate" else (b - a) / abs(a) * 100 if a else float("inf"), 1) + 0.0  # no -0.0
+    return d, abs(d) <= (RATE_TOLERANCE if kind == "rate" else LEVEL_TOLERANCE)
+
+
+def _show(v: float, kind: str) -> str:
+    return f"{v:.1f}" if kind == "rate" or abs(v) < 1000 else f"{v:,.0f}"
+
+
+def _diff_text(d: float, kind: str) -> str:
+    return f"{d:+.1f} points" if kind == "rate" else f"{d:+.1f}%"
+
+
+def sources_agree(wb, code: str, name: str, start: int, end: int | None, log, emit) -> dict:
+    """The same measure from different sources, side by side: World Bank vs IMF year by year
+    (actual years only, not the IMF's estimates or projections), and average growth of GDP per
+    person from the World Bank, Maddison and the Penn World Table over the same years.
+    Differences are computed here; facts get only the measures whose latest year differs."""
+    heading = "Do the sources agree?"
+    imf_, lr = load("imf"), load("longrun")
+    rows, notes = [], []
+    last_year = end or datetime.date.today().year
+    if imf_ is not None:
+        emit("step", "Checking World Bank figures against the IMF")
+        for label, wb_id, imf_id, scale, kind in CROSS_CHECKS:
+            try:
+                ours, _ = compute.fetch({"series": wb_id, "countries": [code], "start": start, "end": end}, wb)
+                theirs, edition = imf_.series(imf_id, [code])
+            except Exception as e:
+                emit("step", f"  skipped {wb_id}: {e}")
+                continue
+            first_projection = importlib.import_module("imf").edition_year(edition)
+            actual_until = (first_projection or last_year + 1) - 2  # the year before projections is an estimate
+            a = {y: v / scale for y, v in ours.get(code, {}).items()}
+            b = {y: v for y, v in theirs.get(code, {}).items() if start <= y <= min(actual_until, last_year)}
+            years = sorted(set(a) & set(b))[-CROSS_YEARS:]
+            if not years:
+                continue
+            gaps = [_gap(a[y], b[y], kind) for y in years]
+            y, (d, ok) = years[-1], gaps[-1]
+            agree = sum(g[1] for g in gaps)
+            rows.append([label, str(y), _show(a[y], kind), f"{_show(b[y], kind)} (IMF)", _diff_text(d, kind),
+                         "yes" if ok else "no", f"{agree} of {len(years)} ({years[0]}-{years[-1]})"])
+            if not ok:
+                log.facts.append({"indicator": f"{label}: World Bank and IMF differ", "year": y,
+                                  "value": f"World Bank {_show(a[y], kind)}, IMF {_show(b[y], kind)}"})
+            log.sources["imf"] = {**SOURCES["imf"], "note": edition}
+            log.used.append(wb_id)
+    else:
+        notes.append(f"IMF data couldn't be reached ({_missing.get('imf', '')[:80]}), so only long-run sources "
+                     "are compared.")
+
+    # average growth of GDP per person, the same years in every source
+    if lr is not None and "mpd.gdppc" in lr.vars:
+        emit("step", "Comparing long-run growth across sources")
+        try:
+            series = {"World Bank": compute.fetch({"series": "NY.GDP.PCAP.KD", "countries": [code], "start": 1990},
+                                                  wb)[0].get(code, {}),
+                      "Maddison": dict(lr._obs(lr._var("mpd.gdppc"), code, 1990, None) or [])}
+            if "pwt.rgdpna_pc" in lr.vars:
+                series["Penn World Table"] = dict(lr._obs(lr._var("pwt.rgdpna_pc"), code, 1990, None) or [])
+            series = {k: v for k, v in series.items() if v}
+            last = min(max(s) for s in series.values()) if len(series) > 1 else None
+            first = last - CROSS_YEARS if last else None
+            growth = {k: devecon.cagr(s[first], s[last], CROSS_YEARS) for k, s in series.items()
+                      if first in s and last in s and s[first] > 0 and s[last] > 0}
+            if "World Bank" in growth and len(growth) > 1:
+                base = growth["World Bank"]
+                others = {k: g for k, g in growth.items() if k != "World Bank"}
+                worst = max(others.values(), key=lambda g: abs(g - base))
+                d, ok = _gap(base, worst, "rate")
+                rows.append([f"Average growth of GDP per person, {first}-{last} (% a year)", f"{first}-{last}",
+                             f"{base:.1f}", "; ".join(f"{g:.1f} ({k})" for k, g in others.items()),
+                             _diff_text(d, "rate") + (" (largest)" if len(others) > 1 else ""),
+                             "yes" if ok else "no", "–"])
+                if not ok:
+                    log.facts.append({"indicator": "Average growth of GDP per person: sources differ",
+                                      "years": f"{first}-{last}",
+                                      "value": ", ".join(f"{k} {g:.1f}%" for k, g in growth.items())})
+                log.sources["maddison"] = SOURCES["maddison"]
+                if "Penn World Table" in growth:
+                    log.sources["pwt"] = SOURCES["pwt"]
+        except Exception as e:
+            notes.append(f"Long-run growth couldn't be compared ({type(e).__name__}).")
+    else:
+        notes.append(f"Long-run data (Maddison, Penn World Table) {NOT_SET_UP}, so long-run growth isn't compared.")
+
+    if not rows:
+        return section(heading, notes=notes + [f"No measure for {name} is available from two sources."])
+    notes = [f"Each row is the same measure from two or more sources. \"Agree\" means within "
+             f"{RATE_TOLERANCE} percentage points for rates and {LEVEL_TOLERANCE:g}% for levels (thresholds chosen "
+             f"for this report); difference = other source minus World Bank. The last column counts the latest "
+             f"{CROSS_YEARS} years both have.",
+             "IMF years from the year before its projections on are left out: they are estimates or forecasts. "
+             "Sources differ because they revise at different times, use different base years, or (for "
+             "unemployment) the World Bank shows the ILO's modelled estimate. A difference shows which figures "
+             "are uncertain, not which source is right.",
+             "Long-run growth: compound annual growth of GDP per person over the same years in each source (World "
+             "Bank: constant 2015 US$; Maddison: 2011 international $; Penn World Table: national-accounts real "
+             "GDP per person)."] + notes
+    return section(heading, {"columns": ["Measure", "Year", "World Bank", "Other sources", "Difference",
+                                         "Agree?", "Years agreeing"], "rows": rows}, notes)
 
 
 def long_run(code: str, name: str, log, emit) -> dict:

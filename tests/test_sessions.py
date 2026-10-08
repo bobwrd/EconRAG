@@ -102,6 +102,10 @@ def test_reports_are_saved_whole():
     back = db.report(first)
     assert back["sections"] == report["sections"] and back["results"][0][0] == "get_data"
     assert db.delete_report(second) and not db.delete_report(second) and db.report(second) is None
+    assert db.latest_report("brief", "Ghana: country brief") is None
+    db.add_report({**report, "created": "2026-10-10T10:00:00"})
+    assert db.latest_report("brief", "Kenya: country brief")["created"] == "2026-10-10T10:00:00"
+    assert db.latest_report("poverty", "Kenya: country brief") is None
 
 
 if __name__ == "__main__":

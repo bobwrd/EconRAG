@@ -6,6 +6,7 @@ tokens: the summary request goes to a scripted fake. World Bank data is real
     .venv/bin/python tests/test_reports.py
 """
 
+import copy
 import csv
 import datetime
 import io
@@ -23,6 +24,7 @@ import test_tools as tt  # noqa: E402  (sets cwd and sys.path; shares the fake G
 import charts  # noqa: E402
 import compute  # noqa: E402
 import groq_client  # noqa: E402
+import report_changes  # noqa: E402
 import report_export  # noqa: E402
 import report_recipes as rr  # noqa: E402
 import workflows  # noqa: E402
@@ -229,6 +231,13 @@ def test_web_report_endpoints():
         view = json.loads(test_web._request(app, "GET", f"/api/reports/view?id={rid}")[1])
         assert view["title"] == report["title"] and view["id"] == rid and "results" not in view
         assert test_web._request(app, "GET", f"/api/report?id={rid}&fmt=json")[0] == 200
+        # the same report again: it opens with what changed since the saved one (nothing, here)
+        workflows.compare = lambda *a, **k: copy.deepcopy(report)
+        status, body = test_web._request(app, "POST", "/api/report", {"kind": "compare", "countries": "Kenya, Ghana"})
+        again = json.loads(body.decode().splitlines()[-1])
+        assert again["sections"][0]["heading"] == report_changes.HEADING
+        assert "Nothing changed" in again["sections"][0]["notes"][-1]
+        assert test_web._request(app, "POST", "/api/reports/delete", {"id": int(again["id"])})[0] == 200
         assert test_web._request(app, "POST", "/api/reports/delete", {"id": int(rid)})[0] == 200
         assert test_web._request(app, "GET", f"/api/reports/view?id={rid}")[0] == 404
         app.saved = None
@@ -269,7 +278,7 @@ def _brief():
 def test_country_brief_tables_come_from_the_data():
     report, sent = _brief()
     headings = [s["heading"] for s in report["sections"]]
-    for h in ("Income", "Growth", "IMF outlook", "Long-run growth", "Poverty and inequality", "Health", "Education",
+    for h in ("Income", "Growth", "IMF outlook", "Do the sources agree?", "Long-run growth", "Poverty and inequality", "Health", "Education",
               "Differences within the country", "Research about the country"):
         assert h in headings, h
     income = report["sections"][0]
@@ -288,6 +297,46 @@ def test_country_brief_tables_come_from_the_data():
     assert report["summary"]["status"] == "ok"
 
 
+def test_sources_agree_compares_world_bank_imf_and_long_run():
+    report, _ = _brief()
+    sec = next(s for s in report["sections"] if s["heading"] == "Do the sources agree?")
+    rows = {r[0]: r for r in sec["table"]["rows"]}
+    assert "Real GDP growth (%)" in rows and any(k.startswith("Average growth of GDP per person") for k in rows)
+    for label, wb_id, imf_id, scale, kind in rr.CROSS_CHECKS:  # differences computed from the data shown
+        if label in rows:
+            _, year, ours, theirs, diff, agree, _ = rows[label]
+            d, ok = rr._gap(float(ours.replace(",", "")), float(theirs.split()[0].replace(",", "")), kind)
+            assert abs(d - float(diff.split()[0].rstrip("%"))) <= 0.11 and agree == ("yes" if ok else "no"), label
+            assert int(year) < datetime.date.today().year  # no IMF estimates or projections
+            differs = any(f["indicator"] == f"{label}: World Bank and IMF differ" for f in report["facts"]["rows"])
+            assert differs == (agree == "no"), label  # only disagreements reach the fact sheet
+    assert rr._gap(4.0, 4.5, "rate") == (0.5, True) and rr._gap(4.0, 4.6, "rate") == (0.6, False)
+    assert rr._gap(100, 97, "level") == (-3.0, True) and rr._gap(0.0, -0.04, "rate") == (0.0, True)
+
+
+def test_report_changes_lists_what_python_wrote_differently():
+    def report(cells, items, created="2026-01-01T09:00:00"):
+        return {"created": created, "inputs": {"country": "Kenya"}, "summary": {"text": created},
+                "sections": [{"heading": "Income", "table": {"columns": ["Indicator", "Kenya", "Group"],
+                                                             "rows": cells}, "items": []},
+                             {"heading": "Research", "table": None, "items": [{"title": t} for t in items]}]}
+    old = report([["PPP", "6,100 (2023)", "5,000 (2023)"], ["Growth", "4.5", "–"], ["Forecast 2025", "5.0", "–"]],
+                 ["A", "B"])
+    new = report([["PPP", "6,650 (2024)", "5,200 (2023)"], ["Growth", "4.5", "3.1"]], ["B", "C"],
+                 created="2026-10-09T09:00:00")
+    found = {(c["what"], c["change"]) for c in report_changes.changes(old, new)}
+    assert found == {("PPP — Kenya", "newer data"), ("PPP — Group", "revised"), ("Growth — Group", "now available"),
+                     ("Forecast 2025 — Kenya", "no longer shown"), ("C", "now available"), ("A", "no longer shown")}
+    sec = report_changes.section(old, new)
+    assert sec["table"]["rows"][0][:2] == ["Income", "PPP — Kenya"] and "2026-01-01 09:00" in sec["notes"][0]
+    assert not any("different settings" in n for n in sec["notes"])  # the summary text differs: not a change
+    new["inputs"]["start"] = 2014
+    assert any("different settings (start)" in n for n in report_changes.section(old, new)["notes"])
+    assert report_changes.section(new, new)["table"] is None
+    new["sections"].insert(0, report_changes.section(old, new))  # an earlier changes section is never compared
+    assert report_changes.changes(new, new) == []
+
+
 def test_missing_data_switches_sections_off():
     saved, chunks = dict(rr._loaded), rr.CHUNKS
     rr._loaded.update(longrun=None, gdl=None, dhs=None, jpal=None, imf=None)
@@ -302,6 +351,7 @@ def test_missing_data_switches_sections_off():
         rr.CHUNKS = chunks
     off = {s["heading"]: " ".join(s["notes"]) for s in report["sections"] + profile["sections"] + works["sections"]
            if not s["table"] and not s["items"]}
+    assert "No measure" in off["Do the sources agree?"]
     for heading in ("Long-run growth", "Differences within the country", "Research about the country",
                     "Income by region", "Randomized evaluations (J-PAL)", "From the paper library"):
         assert "not set up" in off[heading], heading

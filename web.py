@@ -35,6 +35,7 @@ from urllib.parse import parse_qs, urlparse
 import charts
 import compute
 import groq_client
+import report_changes
 import report_export
 import report_recipes
 import sessions
@@ -493,6 +494,12 @@ class App:
         rid = None
         if self.saved:  # kept, so it can be reopened and downloaded after a restart
             try:
+                previous = self.saved.latest_report(report.get("kind", ""), report["title"])
+                if previous:  # made before: what changed since (Python only, no tokens)
+                    try:
+                        report["sections"].insert(0, report_changes.section(previous, report))
+                    except Exception as e:  # a bonus: never lose the report over it
+                        print(f"  (couldn't compare with the last report: {e})", flush=True)
                 rid = self.store(report, self.reports, rid=str(self.saved.add_report(report)))
             except sqlite3.Error as e:
                 print(f"  (couldn't save this report: {e}; it's kept until web.py stops)", flush=True)

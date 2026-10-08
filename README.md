@@ -53,9 +53,11 @@ and builds every table; the model writes only a short summary, which is fact-che
 a summary" and Python lists the highlights instead, for free). Download as PDF, Word, Markdown,
 LaTeX (with BibTeX), JSON, CSV tables, a Jupyter notebook, or the data itself. Comparisons and
 briefs take a year range; a brief can add your own indicators and a peer group of up to 8 countries.
+Make the same report again in the web page and it opens with **what changed since last time**: every
+table value that has newer data, was revised, appeared or went away (the summary's wording isn't compared).
 - **Compare countries**: 2-6 countries on income, growth, poverty, health, education and more (~2-5K Groq tokens).
 - **Country brief**: one country against its income group and region; long-run growth, the World
-  Bank's growth forecast, differences between regions, and J-PAL studies and library papers about it (~3-5K).
+  Bank's growth forecast, whether the World Bank, IMF, Maddison and Penn World Table agree, differences between regions, and J-PAL studies and library papers about it (~3-5K).
 - **Poverty profile**: the $3.00, $4.20 and $8.30 lines for every survey year, the number of poor,
   how old and how far apart the surveys are, and income by region (~2-4K).
 - **What works**: randomized evaluations of an intervention from J-PAL, grouped by outcome and

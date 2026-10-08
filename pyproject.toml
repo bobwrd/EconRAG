@@ -13,7 +13,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "econrag"
-version = "0.1.0"
+version = "0.1.1"
 description = "Development economics research assistant: checkable numbers from World Bank, IMF, FRED and more, with a fact-checked answer."
 readme = "README.md"
 license = { file = "LICENSE" }

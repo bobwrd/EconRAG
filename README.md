@@ -119,7 +119,9 @@ need no setup. Free tiers: Groq allows about 15 questions a day; OpenAlex about 
 .venv/bin/python workflows.py works cash transfers --region "South Asia"   # "what works" review
                                                              # (--no-summary on any of them: no Groq tokens)
 .venv/bin/python longrun.py "South Korea" Ghana  # long-run comparison from the command line
+.venv/bin/python data_manifest.py                # list data/ files with checksums (--check: what changed)
 
+.venv/bin/python tests/run_fast.py               # the quick tests in one go (--ci: those needing no data/)
 .venv/bin/python tests/test_tools.py             # tool tests (no API usage)
 .venv/bin/python tests/test_devecon.py           # development-economics formulas
 .venv/bin/python tests/test_longrun.py           # long-run data
@@ -131,6 +133,7 @@ need no setup. Free tiers: Groq allows about 15 questions a day; OpenAlex about 
 .venv/bin/python tests/test_setup.py             # setup script
 .venv/bin/python tests/test_reports.py           # reports (World Bank data, no API usage)
 .venv/bin/python tests/test_imf.py               # IMF World Economic Outlook (live data)
+.venv/bin/python tests/test_manifest.py          # data file list
 
 .venv/bin/python eval/benchmark.py run NAME                # 45-question benchmark (resumable;
                                                            # ~2 days of Groq's free tier)
@@ -139,5 +142,10 @@ need no setup. Free tiers: Groq allows about 15 questions a day; OpenAlex about 
 .venv/bin/python eval/retrieval_eval.py --rerank --dev     # paper retrieval, no model needed
 ```
 
-See `NOTES.md` for architecture, design decisions, and known pitfalls, and `ROADMAP.md` for
-progress and what's next.
+Optional: `.venv/bin/pip install -e .` adds the commands `econrag-web`, `econrag-ask`,
+`econrag-setup` and `econrag-report` (an in-place install: the code reads its files from this folder).
+GitHub Actions runs the tests that need no data files on every push (`.github/workflows/tests.yml`).
+
+See `NOTES.md` for architecture, design decisions, and known pitfalls, `ROADMAP.md` for
+progress and what's next, `new-roadmap.md` for the hardening plan, and `SECURITY.md` for the
+security model.

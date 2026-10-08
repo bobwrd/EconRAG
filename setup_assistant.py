@@ -429,5 +429,9 @@ def main(argv: list[str]) -> int:
     return 0
 
 
-if __name__ == "__main__":
+def cli():  # the pyproject.toml command
     sys.exit(main(sys.argv[1:]))
+
+
+if __name__ == "__main__":
+    cli()

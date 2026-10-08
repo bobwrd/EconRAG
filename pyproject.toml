@@ -1,0 +1,57 @@
+# Project description for pip. The modules read files that sit next to them (ui/, papers.json,
+# data/, docs/), so install in place from the project folder ("editable"), not into site-packages:
+#
+#     .venv/bin/pip install -e .            # adds the econrag-* commands below
+#     .venv/bin/pip install -e ".[dev]"     # plus pytest and ruff (optional; the tests don't need them)
+#
+# requirements.txt stays the exact, pinned list that setup_assistant.py installs; the versions
+# here are the same pins.
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "econrag"
+version = "0.1.0"
+description = "Development economics research assistant: checkable numbers from World Bank, IMF, FRED and more, with a fact-checked answer."
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "bobwrd" }]
+requires-python = ">=3.11"  # setup_assistant.py checks the same; developed and tested on 3.13
+dependencies = [
+    "fpdf2==2.8.9",
+    "laya==0.3.20",                  # the local reranker and router
+    "numpy==2.5.3",
+    "pdfplumber==0.11.10",
+    "python-docx==1.2.0",
+    "python-dotenv==1.2.3",
+    "requests==2.34.2",
+    "scipy==1.18.1",
+    "sentence-transformers==6.1.0",
+    "torch==2.14.0",
+    "transformers==5.17.0",
+    "urllib3==2.8.0",
+]
+# Not pip packages: Ollama (the offline generator, an app) and Ask (charts, vendor/ask with
+# its own .venv). setup_assistant.py sets both up.
+
+[project.optional-dependencies]
+dev = ["pytest", "ruff"]
+
+[project.scripts]
+econrag-web = "web:main"
+econrag-ask = "ask:main"
+econrag-setup = "setup_assistant:cli"
+econrag-report = "workflows:cli"
+
+[tool.setuptools]
+py-modules = [
+    "analyst", "ask", "atlas", "bm25", "charts", "compute", "data_manifest", "devecon", "dhs",
+    "fred", "gdl", "groq_client", "imf", "ingest", "jpal", "longrun", "openalex",
+    "report_export", "report_recipes", "setup_assistant", "verify", "web", "workflows",
+    "worldbank",
+]
+
+[tool.ruff]
+target-version = "py311"  # default rules only (no line-length check: many lines are long on purpose)

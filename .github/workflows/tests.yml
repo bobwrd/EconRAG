@@ -1,0 +1,22 @@
+# Runs the tests that need no data/ files (data/ is gitignored, so GitHub's copy has none).
+# No API keys, no Groq tokens. macOS because run_python's sandbox (sandbox-exec) is macOS-only.
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  quick:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - run: python tests/run_fast.py --ci

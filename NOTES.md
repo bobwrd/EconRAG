@@ -294,6 +294,19 @@ question --> analyst.py: gpt-oss-120b (Groq) loop, up to 6 rounds, calling tools
   at 1,994 tokens (search_papers' description shortened to make room for the enum value).
   Also in `compute.SOURCES` (run_python, data zips). Tests: `tests/test_imf.py` (live data +
   a canned fallback reply). `python imf.py "government debt" Kenya`.
+- `pyproject.toml` (Oct 9 2026) — package metadata, the same pins as `requirements.txt` (change
+  both together), a `dev` extra (pytest, ruff; not installed), and commands `econrag-web/-ask/-setup/
+  -report` (`setup_assistant.cli`, `workflows.cli`). Editable install only (`pip install -e .`): the
+  modules read ui/, papers.json, data/ and docs/ next to themselves. `pip install -e .` not yet tried.
+- `data_manifest.py` (Oct 9 2026) — `data/MANIFEST.json`: source, kind (downloaded once / cache /
+  generated), size, date, SHA-256 per data file; `--check` lists missing, new and changed files,
+  cache changes (World Bank/DHS catalogs, IMF) separately as expected. Not yet run automatically
+  after imports. Tests: `tests/test_manifest.py`.
+- `tests/run_fast.py` — runs the quick test files in one go; `--ci` only those needing no data/
+  (devecon, manifest, setup), which is what `.github/workflows/tests.yml` runs (macOS, Python 3.13,
+  no keys). Checked in a copy without data/ on Oct 9; not yet run on GitHub.
+- `SECURITY.md` — the security model (localhost only, the sandbox's limits). `new-roadmap.md` — the
+  hardening plan (packaging, CI, logging, data versions, sessions).
 - `verify.py` — fact-checks analyst answers (numbers + citations vs tool results).
 - `groq_client.py` — Groq API call + `GroqUnavailable`; `GROQ_MODEL` lives here.
 - `tests/test_tools.py` — tool + analyst-loop tests (fake Groq, zero tokens, ~3s). Run after

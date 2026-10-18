@@ -415,6 +415,9 @@ STEPS = [  # name, needed, label, check, install
 # ------------------------------------------------------------------ verify and uninstall
 def verify() -> bool:
     """The quick self-test (tests/run_fast.py --ci): no keys, no data files, no tokens."""
+    if not (ROOT / "tests" / "run_fast.py").exists():
+        say("No self-test in this copy (the tests aren't published).")
+        return True
     if not VENV_PY.exists():
         say("No .venv yet: run the 'packages' step first.")
         return False
@@ -529,7 +532,8 @@ def main(argv: list[str]) -> int:
                 say("\n  (skipped)")
     if DATA.is_dir() and "datafiles" not in todo:  # the files just installed become the reference list
         save_manifest()
-    if "packages" in todo and check_packages()[0] and ask_yes("\nRun the quick self-test (about 30 seconds)?"):
+    if ("packages" in todo and check_packages()[0] and (ROOT / "tests" / "run_fast.py").exists()
+            and ask_yes("\nRun the quick self-test (about 30 seconds)?")):
         verify()
     say("\nDone. Run `python3 setup_assistant.py` any time to see what's set up.")
     return 0

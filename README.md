@@ -87,7 +87,6 @@ git clone https://github.com/bobwrd/EconRAG.git
 cd EconRAG
 python3 setup_assistant.py            # shows what's set up (changes nothing)
 python3 setup_assistant.py install    # walks through each missing step, asking first
-python3 setup_assistant.py verify     # quick self-test (about 30 seconds)
 python3 setup_assistant.py uninstall  # remove what setup added, asking for each
 ```
 
@@ -128,31 +127,9 @@ need no setup. Free tiers: Groq allows about 15 questions a day; OpenAlex about 
 .venv/bin/python longrun.py "South Korea" Ghana  # long-run comparison from the command line
 .venv/bin/python data_manifest.py                # list data/ files with checksums (--check: what changed)
 .venv/bin/python groq_client.py                  # Groq tokens used in the last 24 hours (of 200,000)
-
-.venv/bin/python tests/run_fast.py               # the quick tests in one go (--ci: those needing no data/)
-.venv/bin/python tests/test_tools.py             # tool tests (no API usage)
-.venv/bin/python tests/test_devecon.py           # development-economics formulas
-.venv/bin/python tests/test_longrun.py           # long-run data
-.venv/bin/python tests/test_dhs.py               # DHS surveys (live API)
-.venv/bin/python tests/test_jpal.py              # J-PAL evaluations
-.venv/bin/python tests/test_gdl.py               # Global Data Lab
-.venv/bin/python tests/test_compute.py           # run_python sandbox
-.venv/bin/python tests/test_web.py               # web UI (no API usage)
-.venv/bin/python tests/test_setup.py             # setup script
-.venv/bin/python tests/test_reports.py           # reports (World Bank data, no API usage)
-.venv/bin/python tests/test_imf.py               # IMF World Economic Outlook (live data)
-.venv/bin/python tests/test_manifest.py          # data file list
-.venv/bin/python tests/test_sessions.py          # saved chats
-
-.venv/bin/python eval/benchmark.py run NAME                # 45-question benchmark (resumable;
-                                                           # ~2 days of Groq's free tier)
-.venv/bin/python eval/benchmark.py run NAME --only retest  # the 22 questions recent fixes target
-.venv/bin/python eval/benchmark.py score NAME              # grade a run
-.venv/bin/python eval/retrieval_eval.py --rerank --dev     # paper retrieval, no model needed
 ```
 
 Optional: `.venv/bin/pip install -e .` adds the commands `econrag-web`, `econrag-ask`,
 `econrag-setup` and `econrag-report` (an in-place install: the code reads its files from this folder).
-GitHub Actions runs the tests that need no data files on every push (`.github/workflows/tests.yml`).
 
 See `SECURITY.md` for the security model.

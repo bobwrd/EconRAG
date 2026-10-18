@@ -2,7 +2,7 @@
 # data/, docs/), so install in place from the project folder ("editable"), not into site-packages:
 #
 #     .venv/bin/pip install -e .            # adds the econrag-* commands below
-#     .venv/bin/pip install -e ".[dev]"     # plus pytest and ruff (optional; the tests don't need them)
+#     .venv/bin/pip install -e ".[dev]"     # plus pytest and ruff (optional)
 #
 # requirements.txt stays the exact, pinned list that setup_assistant.py installs; the versions
 # here are the same pins.

@@ -3,7 +3,9 @@ Groq's OpenAI-compatible chat API (free tier), shared by ask.py and analyst.py,
 with OpenRouter as a backup: when Groq can't serve a request for long (daily
 token cap, outage, bad key), the same request goes to OpenRouter if
 OPENROUTER_API_KEY is set — OPENROUTER_MODEL, default the same gpt-oss-120b.
-Short per-minute rate limits still raise, so callers wait for Groq instead.
+Short per-minute rate limits still raise, so callers wait for Groq instead; during an
+analyst question (start_question/end_question) every per-minute limit does, so one
+question never mixes the two models.
 Every failure raises GroqUnavailable so callers can fall back to the local model.
 
 Token use: each reply's token counts (already in every reply, nothing extra is sent)
@@ -28,6 +30,9 @@ GROQ_API_KEY = os.environ.get("GROQ_API_KEY")
 # its hidden reasoning is returned separately from the answer but counts
 # against max_tokens.
 GROQ_MODEL = "openai/gpt-oss-120b"
+# The analyst's tool-choosing rounds: Groq lists it with its own 8K/minute and 200K/day, so those
+# rounds stop eating 120b's minute. GROQ_MODEL writes every answer. Set to GROQ_MODEL to turn off.
+TOOL_MODEL = "openai/gpt-oss-20b"
 GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY")
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "openai/gpt-oss-120b")
@@ -36,6 +41,21 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 BACKUP_AFTER_WAIT = 10  # seconds; only short per-minute waits stay on Groq, longer ones go to OpenRouter
 last_provider = "groq"   # which service answered the latest request
 _groq_blocked_until = 0.0  # after a daily-cap 429, skip Groq until then
+# While Analyst.run answers a question: the provider it started on. Switching mid-question let a
+# different model finish what gpt-oss started (6 of 12 requests on Oct 18), so a question stays put:
+# per-minute limits are waited out on Groq; only a real outage or the daily cap moves it.
+_question_provider: str | None = None
+
+
+def start_question():
+    global _question_provider
+    _question_provider = ("openrouter" if OPENROUTER_API_KEY and time.time() < _groq_blocked_until
+                          else "groq")
+
+
+def end_question():
+    global _question_provider
+    _question_provider = None
 
 _session = requests.Session()
 
@@ -67,37 +87,46 @@ def _wants_backup(e: GroqUnavailable) -> bool:
 
 def post(payload: dict, stream: bool = False) -> requests.Response:
     """POSTs a chat completion (model filled in) and returns the 200 response:
-    Groq first, OpenRouter when Groq is out for a while (see the module docstring)."""
-    global last_provider, _groq_blocked_until
-    if not (OPENROUTER_API_KEY and time.time() < _groq_blocked_until):
+    Groq first, OpenRouter when Groq is out for a while (see the module docstring).
+    A "model" in payload picks the Groq model (default GROQ_MODEL); OpenRouter always
+    gets OPENROUTER_MODEL."""
+    global last_provider, _groq_blocked_until, _question_provider
+    groq_model = payload.get("model") or GROQ_MODEL
+    payload = {k: v for k, v in payload.items() if k != "model"}
+    skip_groq = (time.time() < _groq_blocked_until if _question_provider is None
+                 else _question_provider == "openrouter")
+    if not (OPENROUTER_API_KEY and skip_groq):
         try:
-            response = _post(GROQ_URL, GROQ_API_KEY, GROQ_MODEL, payload, stream, "Groq")
+            response = _post(GROQ_URL, GROQ_API_KEY, groq_model, payload, stream, "Groq")
             last_provider = "groq"
-            _record(response, stream)
+            _record(response, stream, groq_model)
             return response
         except GroqUnavailable as e:
-            if not (OPENROUTER_API_KEY and _wants_backup(e)):
-                raise
+            per_minute = e.retry_after and "per day" not in str(e)
+            if not (OPENROUTER_API_KEY and _wants_backup(e)) or (per_minute and _question_provider == "groq"):
+                raise  # mid-question per-minute limit: the caller waits for Groq
             # don't retry Groq on every request until the daily cap clears
             _groq_blocked_until = time.time() + (e.retry_after or 15 * 60)
             why = "rate limit" if e.retry_after and "per day" not in str(e) else str(e)[:80]
             notify(f"  (Groq {why}: switching to OpenRouter {OPENROUTER_MODEL})")
+            if _question_provider:
+                _question_provider = "openrouter"  # the rest of this question too
     response = _post(OPENROUTER_URL, OPENROUTER_API_KEY, OPENROUTER_MODEL,
                      # only route to OpenRouter providers that support every parameter sent (tools)
                      {**payload, "provider": {"require_parameters": True}}, stream, "OpenRouter")
     last_provider = "openrouter"
-    _record(response, stream)
+    _record(response, stream, OPENROUTER_MODEL)
     return response
 
 
 # ------------------------------------------------------------------ token use
-def _record(response: requests.Response, stream: bool):
+def _record(response: requests.Response, stream: bool, model: str):
     """Adds the reply's token counts to today's file. Streamed replies (eval/run_eval.py
     only) carry no counts and aren't recorded; a failure here never fails the request."""
     if stream:
         return
     try:
-        record_usage(last_provider, response.json().get("usage") or {})
+        record_usage(last_provider, response.json().get("usage") or {}, model=model)
     except (ValueError, OSError):
         pass
 
@@ -108,13 +137,14 @@ def cached_tokens(usage: dict) -> int:
     return ((usage.get("prompt_tokens_details") or {}).get("cached_tokens") or 0)
 
 
-def record_usage(provider: str, usage: dict, now: datetime | None = None, folder: Path | None = None):
+def record_usage(provider: str, usage: dict, now: datetime | None = None, folder: Path | None = None,
+                 model: str | None = None):
     now = now or datetime.now()
     folder = folder or USAGE_DIR
     folder.mkdir(parents=True, exist_ok=True)
     line = {"time": now.isoformat(timespec="seconds"), "provider": provider,
             "prompt": usage.get("prompt_tokens", 0), "completion": usage.get("completion_tokens", 0),
-            "total": usage.get("total_tokens", 0), "cached": cached_tokens(usage)}
+            "total": usage.get("total_tokens", 0), "cached": cached_tokens(usage), "model": model}
     with (folder / f"{now:%Y-%m-%d}.jsonl").open("a") as f:
         f.write(json.dumps(line) + "\n")
 
@@ -125,7 +155,7 @@ def usage(now: datetime | None = None, folder: Path | None = None) -> dict:
     now = now or datetime.now()
     folder = folder or USAGE_DIR
     since = now - timedelta(hours=24)
-    out = {"groq": 0, "openrouter": 0, "requests": 0, "groq_cached": 0}
+    out = {"groq": 0, "openrouter": 0, "requests": 0, "groq_cached": 0, "groq_tool_model": 0}
     for day in sorted({since.date(), now.date()}):
         path = folder / f"{day:%Y-%m-%d}.jsonl"
         if not path.exists():
@@ -134,7 +164,10 @@ def usage(now: datetime | None = None, folder: Path | None = None) -> dict:
             try:
                 line = json.loads(raw)
                 if datetime.fromisoformat(line["time"]) > since:
-                    out[line["provider"]] = out.get(line["provider"], 0) + line["total"]
+                    # the daily cap is per model: TOOL_MODEL's tokens are counted apart from 120b's
+                    key = ("groq_tool_model" if line["provider"] == "groq"
+                           and line.get("model") not in (None, GROQ_MODEL) else line["provider"])
+                    out[key] = out.get(key, 0) + line["total"]
                     out["requests"] += 1
                     if line["provider"] == "groq":
                         out["groq_cached"] += line.get("cached", 0)  # older lines have none
@@ -150,6 +183,7 @@ if __name__ == "__main__":
     print(f"Last 24 hours: {u['groq']:,} Groq tokens of {u['limit']:,} ({u['groq_left']:,} left), "
           f"{u['openrouter']:,} OpenRouter tokens, {u['requests']} requests.\n"
           f"Of the Groq tokens, {u['groq_cached']:,} were prompt tokens served from Groq's cache.\n"
+          f"Tool-choosing model ({TOOL_MODEL}, its own daily cap): {u['groq_tool_model']:,} tokens.\n"
           "Counts only this copy's requests (data/usage/).")
 
 

@@ -63,7 +63,7 @@ Answer from your tools, not from memory:
 - search_literature: published research beyond the library (OpenAlex, ~250M papers): real papers with authors, year, venue, citation count, and abstract. Use it for "what does research say" / "what works" questions the library doesn't cover — most development topics (cash transfers, microfinance, deworming, ...). Search with the topic's standard terms; you only see abstracts, so claim no more than an abstract states.
 - search_evaluations: J-PAL's summaries of ~1,100 randomized evaluations (mostly in developing countries) with their results. Use it with search_literature for "what works" / "does X work" questions; say where and when each study ran.
 - run_python: calculations the other tools don't do (growth needed to reach a target, projections, regressions, population-weighted averages, convergence). List the data in `data`; the script gets DATA[series][ISO3] = {{year: value}} (FRED under "US"), NAMES, devecon (cagr, doubling_time, weighted_mean, gini, fgt, beta_convergence, growth_decomposition), np, scipy.stats. print() every number you will cite, with a label.
-- search_data / get_data: source "worldbank" (default) = World Development Indicators, ~1,500 indicators for ~217 economies plus regions and income groups (e.g. "Sub-Saharan Africa", "Low income") — growth, poverty, inequality, health, education, labor, trade — plus World Bank GDP growth FORECASTS (search "growth forecast"). Present forecasts as forecasts, with the edition date the result gives. Use countries ["all"] to rank every economy. Source "fred" = US and high-frequency series (monthly unemployment, CPI); for inflation from a price index use units "pc1": the raw index is a level, not a rate. Source "longrun" = history before WDI: Maddison GDP per capita back to year 1 (mpd.gdppc, 2011 int$) and Penn World Table output, capital, schooling, TFP since 1950; 2+ countries also returns ratios, overtaking and divergence years; series pwt.growth_accounting splits growth per worker into capital, schooling and TFP. Source "dhs" = Demographic and Health Surveys, ~90 developing countries, one value per survey every ~5 years (child mortality, stunting, fertility, contraception, maternal care, vaccination, schooling, water, HIV, women's empowerment); regions true for subnational values; always state the survey year. Source "gdl" = Global Data Lab subnational HDI, life expectancy, schooling, GNI per capita (2021 PPP) for 1,805 regions in 188 countries, 1990-2023: every region of a country, or ["all"] to rank regions worldwide; metrics take f/m for female/male (lifexpf). Source "imf" = IMF World Economic Outlook: inflation, government debt and budget balance, current account, unemployment, GDP growth, with PROJECTIONS ~5 years ahead; name the edition the result gives. If you don't know the exact id, give get_data a query (a description) instead of series; use search_data only to browse.
+- search_data / get_data: data series. Sources: "worldbank" (default) = World Development Indicators, ~1,500 indicators for ~217 economies plus regions and income groups (e.g. "Sub-Saharan Africa", "Low income"); "fred" = US and high-frequency series (monthly unemployment, CPI); "longrun" = history before 1960 (Maddison, Penn World Table); "dhs" = household surveys in ~90 developing countries, also by region; "gdl" = subnational HDI, life expectancy, schooling and income for 1,805 regions; "imf" = IMF World Economic Outlook with projections. If you don't know the exact id, give get_data a query (a description) instead of series; use search_data only to browse.
 
 Economics conventions:
 - "Employment rate" means the employment-population ratio (FRED EMRATIO), NOT 100 minus the unemployment rate (the unemployed are only those looking for work). Labor force participation is CIVPART.
@@ -83,6 +83,38 @@ Rules:
 6. To compare episodes (e.g. two recessions), call get_data once per episode's date range: max and min are exact only for the range requested; sampled points can miss peaks.
 7. Only when the question is yes/no, above/below, or more/less: answer it explicitly in the first sentence (e.g. "No: India is below $3,000 at market rates, but well above it in PPP terms"); if it differs by measure, give the answer for each.
 8. Answer first, in plain prose: the explanation, the mechanisms, what research finds. Data supports the answer: cite the 2-4 figures that matter, inline. Use a table only when the user asks for a list or ranking, or many numbers are the point. Be concise — under 250 words. Output is shown in a terminal: plain text and simple markdown only."""
+
+# Details for one data source, sent only when the question or the remembered conversation
+# suggests it (SOURCE_WORDS): the full list cost ~450 tokens on every request. Generous
+# triggers: a false match costs ~50 tokens, a miss loses the guidance.
+SOURCE_DETAILS = {
+    "forecasts": (r"forecast|project|outlook|next (year|decade)|\b20(2[6-9]|[3-9]\d)\b|\bwill\b",
+                  'World Bank GDP growth FORECASTS: search "growth forecast". Present forecasts as '
+                  "forecasts, with the edition date the result gives."),
+    "ranking": (r"\brank|highest|lowest|\btop\b|bottom|\bmost\b|\bleast\b|which countr|best|worst",
+                'Use countries ["all"] to rank every economy.'),
+    "longrun": (r"\b1[0-8]\d\d\b|\b19[0-5]\d\b|long[- ]run|histor|centur|maddison|penn|pwt|\btfp\b|"
+                r"productivity|capital stock|growth accounting|overt(ake|ook)|diverge|converge|catch(ing)? up",
+                'Source "longrun": Maddison GDP per capita back to year 1 (mpd.gdppc, 2011 int$) and Penn World '
+                "Table output, capital, schooling, TFP since 1950; 2+ countries also returns ratios, overtaking "
+                "and divergence years; series pwt.growth_accounting splits growth per worker into capital, "
+                "schooling and TFP."),
+    "dhs": (r"\bdhs\b|survey|stunt|mortality|fertility|contracept|vaccin|immuni|maternal|\bhiv\b|water|"
+            r"sanitation|women|girls|child|region|province|district|subnational|within",
+            'Source "dhs": Demographic and Health Surveys, one value per survey every ~5 years (child '
+            "mortality, stunting, fertility, contraception, maternal care, vaccination, schooling, water, HIV, "
+            "women's empowerment); regions true for subnational values; always state the survey year."),
+    "gdl": (r"\bgdl\b|global data lab|\bhdi\b|human development|region|province|district|state|"
+            r"subnational|within",
+            'Source "gdl": Global Data Lab, 1990-2023, 188 countries: every region of a country, or ["all"] to '
+            "rank regions worldwide; GNI per capita in 2021 PPP; metrics take f/m for female/male (lifexpf)."),
+    "imf": (r"\bimf\b|outlook|project|forecast|debt|deficit|budget|fiscal|current account|inflation|"
+            r"unemployment",
+            'Source "imf": inflation, government debt and budget balance, current account, unemployment, GDP '
+            "growth, with PROJECTIONS ~5 years ahead; name the edition the result gives."),
+}
+SOURCE_WORDS = {name: re.compile(words, re.I) for name, (words, _) in SOURCE_DETAILS.items()}
+
 
 # Sent only with the county tools (tools_for): ~400 tokens most questions don't need.
 COUNTY_PROMPT = """
@@ -175,16 +207,44 @@ TOOLS = [
 COUNTY_TOOLS = {"county_profile", "rank_counties", "correlate_counties"}
 COUNTY_WORDS = re.compile(r"\bcount(y|ies)\b|\bparish(es)?\b|\bboroughs?\b|opportunity atlas|"
                           r"\bmobility\b|incarcerat|neighbou?rhoods?|\bgr[eo]w(s|n|ing)? up\b", re.I)
+# US places named without "county": the largest cities and the states. Left out: Georgia and Jordan
+# (countries), Washington (a person or the state; "D.C." still matches), and city names that are
+# mostly people (Jackson, Lincoln). A false match only costs the county tokens.
+US_PLACES = re.compile(r"\b(" + "|".join(sorted((
+    "New York|Los Angeles|Chicago|Houston|Phoenix|Philadelphia|San Antonio|San Diego|Dallas|San Jose|"
+    "Austin|Jacksonville|Fort Worth|Columbus|Charlotte|Indianapolis|San Francisco|Seattle|Denver|"
+    "Oklahoma City|Nashville|El Paso|Boston|Portland|Las Vegas|Detroit|Memphis|Louisville|Baltimore|"
+    "Milwaukee|Albuquerque|Tucson|Fresno|Sacramento|Kansas City|Mesa|Atlanta|Omaha|Colorado Springs|"
+    "Raleigh|Long Beach|Virginia Beach|Miami|Oakland|Minneapolis|Tulsa|Bakersfield|Wichita|Arlington|"
+    "Aurora|Tampa|New Orleans|Cleveland|Honolulu|Anaheim|Lexington|Stockton|Corpus Christi|Henderson|"
+    "Riverside|Newark|Saint Paul|St\\. Paul|Santa Ana|Cincinnati|Irvine|Orlando|Pittsburgh|St\\. Louis|"
+    "Saint Louis|Greensboro|Jersey City|Anchorage|Durham|Chula Vista|Toledo|Fort Wayne|St\\. Petersburg|"
+    "Laredo|Buffalo|Madison|Chandler|Gilbert|Reno|Glendale|Scottsdale|Winston-Salem|Norfolk|Boise|"
+    "Spokane|Richmond|Des Moines|Baton Rouge|Birmingham|Salt Lake City|Rochester|Tacoma|Little Rock|"
+    "Providence|Hartford|Charleston|Savannah|Flint|Gary|Camden|Washington,? D\\.?C\\.?|"
+    "Alabama|Alaska|Arizona|Arkansas|California|Colorado|Connecticut|Delaware|Florida|Hawaii|Idaho|"
+    "Illinois|Indiana|Iowa|Kansas|Kentucky|Louisiana|Maine|Maryland|Massachusetts|Michigan|Minnesota|"
+    "Mississippi|Missouri|Montana|Nebraska|Nevada|New Hampshire|New Jersey|New Mexico|North Carolina|"
+    "North Dakota|Ohio|Oklahoma|Oregon|Pennsylvania|Rhode Island|South Carolina|South Dakota|Tennessee|"
+    "Texas|Utah|Vermont|Virginia|West Virginia|Wisconsin|Wyoming"
+).split("|"), key=len, reverse=True)) + r")\b|\b(US|U\.S\.|American) (cit(y|ies)|metros?|towns?)\b")
 TOOLS_WITHOUT_COUNTIES = [t for t in TOOLS if t["function"]["name"] not in COUNTY_TOOLS]
 
 
 def tools_for(question: str, history: list[dict]) -> list[dict]:
     texts = [question] + [m["content"] for m in history]
-    return TOOLS if any(COUNTY_WORDS.search(t or "") for t in texts) else TOOLS_WITHOUT_COUNTIES
+    return (TOOLS if any(COUNTY_WORDS.search(t or "") or US_PLACES.search(t or "") for t in texts)
+            else TOOLS_WITHOUT_COUNTIES)
 
 
-def system_prompt(tools: list[dict]) -> str:
+def system_prompt(tools: list[dict], question: str = "", history: list[dict] | None = None) -> str:
+    """The shared prompt first (same for every question), then only the details this one needs."""
     text = SYSTEM_PROMPT.format(today=datetime.date.today())
+    texts = [question] + [m["content"] or "" for m in history or []]
+    details = [detail for name, (_, detail) in SOURCE_DETAILS.items()
+               if any(SOURCE_WORDS[name].search(t) for t in texts)]
+    if details:
+        text += "\n\nData details for this question:\n" + "\n".join(f"- {d}" for d in details)
     return text + COUNTY_PROMPT if tools is TOOLS else text
 
 
@@ -284,6 +344,31 @@ def paper_label(source: str) -> str:
 
 
 DHS_REGIONS_SHOWN = 6  # top and bottom; Kenya alone has 47 counties (~2.7K chars)
+
+
+MODEL_POINTS = 8         # sampled points the model sees per series (first and last kept)
+MODEL_DEFINITION = 200   # characters of an indicator's definition the model sees
+
+
+def for_model(value):
+    """The copy of a tool result sent to the model, re-sent with every later request: no
+    sparkline, at most MODEL_POINTS sampled points, a shorter definition. Charts, data
+    downloads and verify.py keep the full result, so the model only ever sees a subset."""
+    if isinstance(value, list):
+        return [for_model(v) for v in value]
+    if not isinstance(value, dict):
+        return value
+    out = {}
+    for key, v in value.items():
+        if key == "sparkline":
+            continue
+        if key.startswith("sampled") and isinstance(v, list) and len(v) > MODEL_POINTS:
+            step = (len(v) - 1) / (MODEL_POINTS - 1)
+            v = [v[round(i * step)] for i in range(MODEL_POINTS)]
+        elif key == "definition" and isinstance(v, str) and len(v) > MODEL_DEFINITION:
+            v = v[:MODEL_DEFINITION].rsplit(" ", 1)[0] + " ..."
+        out[key] = for_model(v)
+    return out
 
 
 def _trim_regions(result: dict) -> dict:
@@ -590,13 +675,24 @@ class Analyst:
                 citations)
 
     def run(self, question: str) -> str:
+        groq_client.start_question()  # one provider for the whole question
+        try:
+            return self._run(question)
+        finally:
+            groq_client.end_question()
+
+    def _run(self, question: str) -> str:
         self._reset_evidence()
         self.last_tokens = self.last_cached = 0
         tools = tools_for(question, self.history)
-        messages = [{"role": "system", "content": system_prompt(tools)},
+        messages = [{"role": "system", "content": system_prompt(tools, question, self.history)},
                     *self.history, {"role": "user", "content": question}]
         revised = False
         trail: list[dict] = []  # tool calls with one-line summaries, for last_result
+        # TOOL_MODEL picks tools until it's ready to answer; then GROQ_MODEL takes over (its text is
+        # dropped and the same request goes to 120b, which may still call tools). Groq only: on
+        # OpenRouter the question has one model throughout.
+        choosing = groq_client.TOOL_MODEL != groq_client.GROQ_MODEL
         for round_ in range(MAX_ROUNDS):
             payload = {"messages": messages, "temperature": 0.2, "max_tokens": 4096,
                        # medium, not low: choosing tools well takes more thought
@@ -607,6 +703,8 @@ class Analyst:
             else:  # last round: no tools at all (gpt-oss ignored tool_choice "none" in testing)
                 messages.append({"role": "user", "content": "Tool budget used up: answer now from the "
                                  "tool results above, and say what you couldn't find."})
+            if choosing:
+                payload["model"] = groq_client.TOOL_MODEL
             self._tools_chars = len(json.dumps(payload.get("tools", [])))
             try:
                 response = self._post(payload)
@@ -614,11 +712,18 @@ class Analyst:
                 if tools is TOOLS or "tools" not in payload or not _called_missing_tool(e):
                     raise
                 tools = payload["tools"] = TOOLS
-                messages[0]["content"] = system_prompt(TOOLS)
+                messages[0]["content"] = system_prompt(TOOLS, question, self.history)
                 self._tools_chars = len(json.dumps(TOOLS))
                 response = self._post(payload)
             msg = response["choices"][0]["message"]
             calls = msg.get("tool_calls") or []
+            if choosing and not calls and groq_client.last_provider == "groq":
+                choosing = False
+                payload.pop("model", None)
+                msg = self._post(payload)["choices"][0]["message"]
+                calls = msg.get("tool_calls") or []
+            elif choosing and groq_client.last_provider != "groq":
+                choosing = False
             if not calls:
                 answer = clean_markers((msg.get("content") or "").strip())
                 if not answer:
@@ -672,5 +777,5 @@ class Analyst:
                 trail.append({"name": name, "args": args, "summary": summary})
                 self._emit("tool", f"  → {name}({shown})\n      {summary}", name=name, args=args, summary=summary)
                 messages.append({"role": "tool", "tool_call_id": call["id"],
-                                 "content": json.dumps(result, ensure_ascii=False)})
+                                 "content": json.dumps(for_model(result), ensure_ascii=False)})
         raise AssertionError("unreachable: the last round forbids tool calls")

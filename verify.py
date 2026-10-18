@@ -38,8 +38,9 @@ _NAME = re.compile(r"\b[A-Za-z]*[A-Z][A-Za-z.]*-?\d+(?:\.\d+)*")
 # Non-breaking / Unicode hyphens (gpt-oss writes "COVID‑19", "2026‑09‑01")
 _HYPHENS = str.maketrans({"\u2010": "-", "\u2011": "-", "\u2012": "-"})
 # "237.5 million" = 237,527,782 to the stated precision; also "$2.7B"
-_SCALE = re.compile(r"\s*((?i:thousand|million|billion|trillion))\b|([KMBT])\b")
-_SCALES = {"thousand": 3, "million": 6, "billion": 9, "trillion": 12, "k": 3, "m": 6, "b": 9, "t": 12}
+_SCALE = re.compile(r"\s*((?i:thousand|million|billion|trillion|bn|mn|tn))\b|([KMBT])\b")
+_SCALES = {"thousand": 3, "million": 6, "billion": 9, "trillion": 12, "k": 3, "m": 6, "b": 9, "t": 12,
+           "bn": 9, "mn": 6, "tn": 12}
 _YEAR = re.compile(r"\b(?:19|20)\d{2}\b")
 # Derived numbers may be off by this much (relative): "2,362.861 ÷ 102.824 ≈ 22.99"
 # (exactly 22.980) is an answer rounding as it goes, not an invented figure.

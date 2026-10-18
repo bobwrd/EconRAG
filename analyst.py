@@ -63,8 +63,7 @@ Answer from your tools, not from memory:
 - search_literature: published research beyond the library (OpenAlex, ~250M papers): real papers with authors, year, venue, citation count, and abstract. Use it for "what does research say" / "what works" questions the library doesn't cover — most development topics (cash transfers, microfinance, deworming, ...). Search with the topic's standard terms; you only see abstracts, so claim no more than an abstract states.
 - search_evaluations: J-PAL's summaries of ~1,100 randomized evaluations (mostly in developing countries) with their results. Use it with search_literature for "what works" / "does X work" questions; say where and when each study ran.
 - run_python: calculations the other tools don't do (growth needed to reach a target, projections, regressions, population-weighted averages, convergence). List the data in `data`; the script gets DATA[series][ISO3] = {{year: value}} (FRED under "US"), NAMES, devecon (cagr, doubling_time, weighted_mean, gini, fgt, beta_convergence, growth_decomposition), np, scipy.stats. print() every number you will cite, with a label.
-- county_profile / rank_counties / correlate_counties: the Opportunity Atlas (every US county). Use them for questions about specific places, comparisons between places, or which local characteristics go with mobility. For a city, use its main county (Chicago -> Cook County, IL) and say so.
-- search_data / get_data: source "worldbank" (default) = World Development Indicators, ~1,500 indicators for ~217 economies plus regions and income groups (e.g. "Sub-Saharan Africa", "Low income") — growth, poverty, inequality, health, education, labor, trade — plus World Bank GDP growth FORECASTS (search "growth forecast"). Present forecasts as forecasts, with the edition date the result gives. Use countries ["all"] to rank every economy. Source "fred" = US and high-frequency series (monthly unemployment, CPI); for inflation from a price index use units "pc1": the raw index is a level, not a rate. Source "longrun" = history before WDI: Maddison GDP per capita back to year 1 (mpd.gdppc, 2011 int$) and Penn World Table output, capital, schooling, TFP since 1950; 2+ countries also returns ratios, overtaking and divergence years; series pwt.growth_accounting splits growth per worker into capital, schooling and TFP. Source "dhs" = Demographic and Health Surveys, ~90 developing countries, one value per survey every ~5 years (child mortality, stunting, fertility, contraception, maternal care, vaccination, schooling, water, HIV, women's empowerment); regions true for subnational values; always state the survey year. Source "gdl" = Global Data Lab subnational HDI, life expectancy, schooling, GNI per capita (2021 PPP) for 1,805 regions in 188 countries, 1990-2023: every region of a country, or ["all"] to rank regions worldwide; metrics take f/m for female/male (lifexpf). Source "imf" = IMF World Economic Outlook: inflation, government debt and budget balance, current account, unemployment, GDP growth, with PROJECTIONS ~5 years ahead; name the edition the result gives. Search first unless you know the exact id.
+- search_data / get_data: source "worldbank" (default) = World Development Indicators, ~1,500 indicators for ~217 economies plus regions and income groups (e.g. "Sub-Saharan Africa", "Low income") — growth, poverty, inequality, health, education, labor, trade — plus World Bank GDP growth FORECASTS (search "growth forecast"). Present forecasts as forecasts, with the edition date the result gives. Use countries ["all"] to rank every economy. Source "fred" = US and high-frequency series (monthly unemployment, CPI); for inflation from a price index use units "pc1": the raw index is a level, not a rate. Source "longrun" = history before WDI: Maddison GDP per capita back to year 1 (mpd.gdppc, 2011 int$) and Penn World Table output, capital, schooling, TFP since 1950; 2+ countries also returns ratios, overtaking and divergence years; series pwt.growth_accounting splits growth per worker into capital, schooling and TFP. Source "dhs" = Demographic and Health Surveys, ~90 developing countries, one value per survey every ~5 years (child mortality, stunting, fertility, contraception, maternal care, vaccination, schooling, water, HIV, women's empowerment); regions true for subnational values; always state the survey year. Source "gdl" = Global Data Lab subnational HDI, life expectancy, schooling, GNI per capita (2021 PPP) for 1,805 regions in 188 countries, 1990-2023: every region of a country, or ["all"] to rank regions worldwide; metrics take f/m for female/male (lifexpf). Source "imf" = IMF World Economic Outlook: inflation, government debt and budget balance, current account, unemployment, GDP growth, with PROJECTIONS ~5 years ahead; name the edition the result gives. If you don't know the exact id, give get_data a query (a description) instead of series; use search_data only to browse.
 
 Economics conventions:
 - "Employment rate" means the employment-population ratio (FRED EMRATIO), NOT 100 minus the unemployment rate (the unemployed are only those looking for work). Labor force participation is CIVPART.
@@ -74,19 +73,28 @@ Economics conventions:
 - GDP per capita: say whether it's at market exchange rates (current US$) or PPP (international $). If the question doesn't specify and the answer depends on it, give both. Growth over time: constant-price (.KD) series, not current-price (.CD).
 - Every value has its own latest year, which can differ across countries: always state the year.
 - Comparisons with peers ("vs similar countries", "vs Sub-Saharan Africa"): get_data with peers true.
-- Don't present a county's racial composition as an explanation for its outcomes. The research attributes racial gaps to factors like segregation, discrimination, and neighborhood conditions: report what the papers say.
 
 Rules:
-1. Every number and every factual claim about a place or trend must come from a tool result in this conversation — if you didn't fetch it, don't assert it. For correlations, use the tool's "interpretation" for the direction. You may do simple arithmetic on those numbers (differences, ratios); show it. Your answer is automatically checked: numbers not found in tool results are flagged to the user.
-2. For "why" or "what explains" questions about places, combine the county data with search_papers. Build the local part ONLY from county_profile's characteristics_consistent_with_gap (computed: differs notably from average AND correlates with mobility). A characteristic marked "about average" cannot explain a gap — mention it only to rule it out; also say which characteristics point the other way. Say "is consistent with" / "is associated with", never "because", "due to", or "largely explains" — unless a search_papers passage makes that causal claim, then attribute it to the paper.
-3. Mention a paper or research finding ONLY if it appeared in a search_papers, search_literature, or search_evaluations result in this conversation; if you didn't search, don't cite research. Cite inline: for library passages, the author-year their label gives, e.g. (Chetty, Hendren, Kline, Saez and Turner (2014)) or (Chetty et al. (2014)), the result's cite_as form, e.g. (Banerjee et al. (2015)), for search_literature, (J-PAL: <title>) for search_evaluations, (Opportunity Atlas) for county data, (World Bank: <indicator id>, <year>) and (FRED: <series id>, <date>) for data. Never invent paper titles, authors, years, table numbers, or figure numbers — citations are automatically checked against the passages and against OpenAlex.
-4. Earlier turns are context for follow-ups ("there", "what about...", "these results"): build on your previous answer — explain, interpret, or extend it; don't repeat its table or re-fetch data it already gave. A self-contained question is about the US unless it names a place. If a county lookup is ambiguous and the question doesn't make the right one obvious, ask the user which one they mean.
-5. If the tools don't contain the answer, say so plainly instead of filling the gap.
-6. Call independent tools together in the same turn rather than one per turn. Don't repeat a search with near-identical wording.
-7. To compare episodes (e.g. two recessions), call get_data once per episode's date range: max and min are exact only for the range requested; sampled points can miss peaks.
-8. The first time you use the Opportunity Atlas mobility measure, explain it plainly, e.g. "children from low-income families (parents at the 25th income percentile) who grew up in Cook County reached, on average, the 38.5th percentile of household income as adults" — these are children born 1978-83, with incomes measured in 2014-15.
-9. Only when the question is yes/no, above/below, or more/less: answer it explicitly in the first sentence (e.g. "No: India is below $3,000 at market rates, but well above it in PPP terms"); if it differs by measure, give the answer for each.
-10. Answer first, in plain prose: the explanation, the mechanisms, what research finds. Data supports the answer: cite the 2-4 figures that matter, inline. Use a table only when the user asks for a list or ranking, or many numbers are the point. Be concise — under 250 words. Output is shown in a terminal: plain text and simple markdown only."""
+1. Every number and every factual claim about a place or trend must come from a tool result in this conversation — if you didn't fetch it, don't assert it. You may do simple arithmetic on those numbers (differences, ratios); show it. Your answer is automatically checked: numbers not found in tool results are flagged to the user.
+2. Mention a paper or research finding ONLY if it appeared in a search_papers, search_literature, or search_evaluations result in this conversation; if you didn't search, don't cite research. Cite inline: for library passages, the author-year their label gives, e.g. (Chetty, Hendren, Kline, Saez and Turner (2014)) or (Chetty et al. (2014)), the result's cite_as form, e.g. (Banerjee et al. (2015)), for search_literature, (J-PAL: <title>) for search_evaluations, (World Bank: <indicator id>, <year>) and (FRED: <series id>, <date>) for data. Never invent paper titles, authors, years, table numbers, or figure numbers — citations are automatically checked against the passages and against OpenAlex.
+3. Earlier turns are context for follow-ups ("there", "what about...", "these results"): build on your previous answer — explain, interpret, or extend it; don't repeat its table or re-fetch data it already gave. A self-contained question is about the US unless it names a place.
+4. If the tools don't contain the answer, say so plainly instead of filling the gap.
+5. Call independent tools together in the same turn rather than one per turn. Don't repeat a search with near-identical wording.
+6. To compare episodes (e.g. two recessions), call get_data once per episode's date range: max and min are exact only for the range requested; sampled points can miss peaks.
+7. Only when the question is yes/no, above/below, or more/less: answer it explicitly in the first sentence (e.g. "No: India is below $3,000 at market rates, but well above it in PPP terms"); if it differs by measure, give the answer for each.
+8. Answer first, in plain prose: the explanation, the mechanisms, what research finds. Data supports the answer: cite the 2-4 figures that matter, inline. Use a table only when the user asks for a list or ranking, or many numbers are the point. Be concise — under 250 words. Output is shown in a terminal: plain text and simple markdown only."""
+
+# Sent only with the county tools (tools_for): ~400 tokens most questions don't need.
+COUNTY_PROMPT = """
+
+US counties (Opportunity Atlas):
+- county_profile / rank_counties / correlate_counties: the Opportunity Atlas (every US county). Use them for questions about specific places, comparisons between places, or which local characteristics go with mobility. For a city, use its main county (Chicago -> Cook County, IL) and say so.
+- Don't present a county's racial composition as an explanation for its outcomes. The research attributes racial gaps to factors like segregation, discrimination, and neighborhood conditions: report what the papers say.
+- For "why" or "what explains" questions about places, combine the county data with search_papers. Build the local part ONLY from county_profile's characteristics_consistent_with_gap (computed: differs notably from average AND correlates with mobility). A characteristic marked "about average" cannot explain a gap — mention it only to rule it out; also say which characteristics point the other way. Say "is consistent with" / "is associated with", never "because", "due to", or "largely explains" — unless a search_papers passage makes that causal claim, then attribute it to the paper.
+- If a county lookup is ambiguous and the question doesn't make the right one obvious, ask the user which one they mean.
+- For correlations, use the tool's "interpretation" for the direction.
+- Cite county data as (Opportunity Atlas).
+- The first time you use the Opportunity Atlas mobility measure, explain it plainly, e.g. "children from low-income families (parents at the 25th income percentile) who grew up in Cook County reached, on average, the 38.5th percentile of household income as adults" — these are children born 1978-83, with incomes measured in 2014-15."""
 
 # Kept terse: the schemas are re-sent with every request (see MAX_RATE_LIMIT_WAIT).
 # Metric descriptions appear once, in rank_counties; results carry them too.
@@ -138,23 +146,24 @@ TOOLS = [
            "state": _state, "race": _race, "gender": _gender}, ["x_metric", "y_metric"]),
     _tool("search_data", "Find series ids by description.",
           {"query": {"type": "string"}, "source": _source}, ["query"]),
-    _tool("get_data", "Computed stats for one series: latest, first, exact max/min with years/dates, "
-          "sampled points, sparkline, definition and caveats.",
-          {"series": {"type": "string", "description": "id from search_data, e.g. SI.POV.DDAY or UNRATE"},
+    _tool("get_data", "Stats for one series: latest, first, exact max/min with dates, sampled points, "
+          "sparkline, definition, caveats.",
+          {"series": {"type": "string", "description": "id, e.g. SI.POV.DDAY or UNRATE"},
+           "query": {"type": "string", "description": "description, if you don't know the id"},
            "source": _source,
            "countries": {"type": "array", "items": {"type": "string"},
                          "description": "worldbank/longrun: names, ISO3 codes, or regions (max 20); "
-                                        "[\"all\"] ranks every economy"},
+                                        "[\"all\"] ranks all"},
            "start": {"type": "string", "description": "worldbank/longrun: year; fred: YYYY-MM-DD"},
            "end": {"type": "string", "description": "worldbank/longrun: year; fred: YYYY-MM-DD"},
            "units": {"type": "string", "enum": list(fred.UNITS),
-                     "description": "fred only. lin=level, pc1/pch=% change vs year ago/previous period"},
+                     "description": "fred only. lin=level, pc1/pch=% change vs year ago/last period"},
            "order": {"type": "string", "enum": ["highest", "lowest"], "description": "with [\"all\"]"},
            "n": {"type": "integer", "description": "with [\"all\"]: how many, default 10"},
            "regions": {"type": "boolean", "description": "dhs: values by region within the (first) country"},
-           "peers": {"type": "boolean", "description": "worldbank: add income-group and region "
-                     "figures and rank within each"}},
-          ["series"]),
+           "peers": {"type": "boolean", "description": "worldbank: add income-group and "
+                     "region figures and ranks"}},
+          []),
 ]
 
 # The county tools are ~1,000 of the ~2,000 schema tokens re-sent with every request, and few
@@ -165,13 +174,18 @@ TOOLS = [
 # with every tool.
 COUNTY_TOOLS = {"county_profile", "rank_counties", "correlate_counties"}
 COUNTY_WORDS = re.compile(r"\bcount(y|ies)\b|\bparish(es)?\b|\bboroughs?\b|opportunity atlas|"
-                          r"\bmobility\b|incarcerat", re.I)
+                          r"\bmobility\b|incarcerat|neighbou?rhoods?|\bgr[eo]w(s|n|ing)? up\b", re.I)
 TOOLS_WITHOUT_COUNTIES = [t for t in TOOLS if t["function"]["name"] not in COUNTY_TOOLS]
 
 
 def tools_for(question: str, history: list[dict]) -> list[dict]:
     texts = [question] + [m["content"] for m in history]
     return TOOLS if any(COUNTY_WORDS.search(t or "") for t in texts) else TOOLS_WITHOUT_COUNTIES
+
+
+def system_prompt(tools: list[dict]) -> str:
+    text = SYSTEM_PROMPT.format(today=datetime.date.today())
+    return text + COUNTY_PROMPT if tools is TOOLS else text
 
 
 def _called_missing_tool(e: GroqUnavailable) -> bool:
@@ -338,6 +352,7 @@ class Analyst:
         self._gdl = None
         self.history: list[dict] = []
         self.last_tokens = 0  # Groq tokens used by the latest run() (free tier: 200K/day)
+        self.last_cached = 0  # of those, prompt tokens served from the provider's cache
         self.last_result: dict = {}  # structured copy of the latest run(), for the web UI
         # on_event(kind, text, **data): where progress goes; None prints to the terminal (ask.py)
         self.on_event = None
@@ -429,6 +444,10 @@ class Analyst:
                             "source; if two searches find nothing, say the data isn't available."}
                 return {"results": results}
             if name == "get_data":
+                if not args.get("series") and args.get("query"):
+                    return self._get_by_description(args)
+                if not args.get("series"):
+                    return {"error": "get_data needs `series` (an id) or `query` (a description)"}
                 if args.get("source") == "fred":
                     stats = fred.series_stats(args["series"], args.get("start"), args.get("end"),
                                               args.get("units") or "lin")
@@ -460,6 +479,25 @@ class Analyst:
             return {"error": f"unknown tool {name}"}
         except Exception as e:  # bad arguments, FRED errors: let the model see and recover
             return {"error": f"{type(e).__name__}: {e}"}
+
+    def _get_by_description(self, args: dict) -> dict:
+        """get_data with `query` instead of `series`: search, fetch the best match, list the
+        others — one round instead of search_data then get_data. Search rankings can be off
+        (FRED's own search puts CPI first for "unemployment rate"), so an exact name match wins
+        and the result says what was matched."""
+        found = self._call("search_data", {"query": args["query"], "source": args.get("source")})
+        results = found.get("results") or []
+        if not results:
+            return {"error": f"no series matched {args['query']!r}", **found}
+        name = lambda r: r.get("name") or r.get("title") or ""  # noqa: E731
+        sid = lambda r: r.get("id") or r.get("series_id")  # noqa: E731
+        pick = next((r for r in results if name(r).lower() == args["query"].strip().lower()), results[0])
+        args["series"] = sid(pick)  # in place: the tool trail, charts and data downloads see the id
+        result = self._call("get_data", args)
+        return {"matched": f"{sid(pick)}: {name(pick)}",
+                "other_matches": [f"{sid(r)}: {name(r)}" for r in results if r is not pick][:4],
+                "note": "matched from your description: if it isn't the series you meant, call get_data "
+                        "again with one of other_matches as series", **result}
 
     @property
     def atlas(self) -> Atlas:
@@ -517,9 +555,7 @@ class Analyst:
         for _ in range(3):
             self._stop_point()
             try:
-                response = groq_post(payload).json()
-                self.last_tokens += response.get("usage", {}).get("total_tokens", 0)
-                return response
+                return self._counted(groq_post(payload).json())
             except GroqUnavailable as e:
                 if e.retry_after is None or e.retry_after > MAX_RATE_LIMIT_WAIT:
                     raise
@@ -529,7 +565,13 @@ class Analyst:
                 while time.time() < until:  # in short naps, so Stop doesn't wait a minute
                     self._stop_point()
                     time.sleep(min(1.0, max(0.0, until - time.time())))
-        return groq_post(payload).json()
+        return self._counted(groq_post(payload).json())
+
+    def _counted(self, response: dict) -> dict:
+        usage = response.get("usage", {})
+        self.last_tokens += usage.get("total_tokens", 0)
+        self.last_cached += groq_client.cached_tokens(usage)
+        return response
 
     def _check(self, answer: str) -> tuple[list[str], list[str]]:
         passages = "\n".join(self._passages)
@@ -549,12 +591,12 @@ class Analyst:
 
     def run(self, question: str) -> str:
         self._reset_evidence()
-        self.last_tokens = 0
-        messages = [{"role": "system", "content": SYSTEM_PROMPT.format(today=datetime.date.today())},
+        self.last_tokens = self.last_cached = 0
+        tools = tools_for(question, self.history)
+        messages = [{"role": "system", "content": system_prompt(tools)},
                     *self.history, {"role": "user", "content": question}]
         revised = False
         trail: list[dict] = []  # tool calls with one-line summaries, for last_result
-        tools = tools_for(question, self.history)
         for round_ in range(MAX_ROUNDS):
             payload = {"messages": messages, "temperature": 0.2, "max_tokens": 4096,
                        # medium, not low: choosing tools well takes more thought
@@ -572,6 +614,7 @@ class Analyst:
                 if tools is TOOLS or "tools" not in payload or not _called_missing_tool(e):
                     raise
                 tools = payload["tools"] = TOOLS
+                messages[0]["content"] = system_prompt(TOOLS)
                 self._tools_chars = len(json.dumps(TOOLS))
                 response = self._post(payload)
             msg = response["choices"][0]["message"]
@@ -608,7 +651,7 @@ class Analyst:
                     self._emit("chart", f"  Chart: {path}", path=str(path))
                 self.last_result = {"answer": answer, "unverified": numbers + citations, "revised": revised,
                                     "charts": [str(p) for p in self.last_charts], "tools": trail,
-                                    "tokens": self.last_tokens, "backend": groq_client.last_provider}
+                                    "tokens": self.last_tokens, "cached": self.last_cached, "backend": groq_client.last_provider}
                 self.remember(question, answer)
                 return answer
             messages.append({"role": "assistant", "content": msg.get("content") or "", "tool_calls": calls})

@@ -102,13 +102,19 @@ def _record(response: requests.Response, stream: bool):
         pass
 
 
+def cached_tokens(usage: dict) -> int:
+    """Prompt tokens the provider served from its cache (Groq caches automatically for gpt-oss;
+    its docs say cached tokens don't count toward rate limits, not yet checked against the cap)."""
+    return ((usage.get("prompt_tokens_details") or {}).get("cached_tokens") or 0)
+
+
 def record_usage(provider: str, usage: dict, now: datetime | None = None, folder: Path | None = None):
     now = now or datetime.now()
     folder = folder or USAGE_DIR
     folder.mkdir(parents=True, exist_ok=True)
     line = {"time": now.isoformat(timespec="seconds"), "provider": provider,
             "prompt": usage.get("prompt_tokens", 0), "completion": usage.get("completion_tokens", 0),
-            "total": usage.get("total_tokens", 0)}
+            "total": usage.get("total_tokens", 0), "cached": cached_tokens(usage)}
     with (folder / f"{now:%Y-%m-%d}.jsonl").open("a") as f:
         f.write(json.dumps(line) + "\n")
 
@@ -119,7 +125,7 @@ def usage(now: datetime | None = None, folder: Path | None = None) -> dict:
     now = now or datetime.now()
     folder = folder or USAGE_DIR
     since = now - timedelta(hours=24)
-    out = {"groq": 0, "openrouter": 0, "requests": 0}
+    out = {"groq": 0, "openrouter": 0, "requests": 0, "groq_cached": 0}
     for day in sorted({since.date(), now.date()}):
         path = folder / f"{day:%Y-%m-%d}.jsonl"
         if not path.exists():
@@ -130,6 +136,8 @@ def usage(now: datetime | None = None, folder: Path | None = None) -> dict:
                 if datetime.fromisoformat(line["time"]) > since:
                     out[line["provider"]] = out.get(line["provider"], 0) + line["total"]
                     out["requests"] += 1
+                    if line["provider"] == "groq":
+                        out["groq_cached"] += line.get("cached", 0)  # older lines have none
             except (ValueError, KeyError):
                 continue
     out["limit"] = DAILY_TOKEN_LIMIT
@@ -141,6 +149,7 @@ if __name__ == "__main__":
     u = usage()
     print(f"Last 24 hours: {u['groq']:,} Groq tokens of {u['limit']:,} ({u['groq_left']:,} left), "
           f"{u['openrouter']:,} OpenRouter tokens, {u['requests']} requests.\n"
+          f"Of the Groq tokens, {u['groq_cached']:,} were prompt tokens served from Groq's cache.\n"
           "Counts only this copy's requests (data/usage/).")
 
 

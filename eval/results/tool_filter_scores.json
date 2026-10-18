@@ -1,0 +1,802 @@
+{
+ "questions": {
+  "data": "Does answering this question need statistics for a country, region or the US economy, such as GDP, poverty, inflation, unemployment, population, health or education figures, or their history?",
+  "counties": "Is this question about specific US counties or comparing US counties, such as upward mobility of children in a county?",
+  "papers": "Does answering this question need findings from economics research papers or studies?",
+  "literature": "Does this question name a specific research paper or authors, or ask what published research finds?",
+  "evaluations": "Does this question ask whether a program or policy for poor people works, such as cash transfers, microcredit, deworming or schooling programs?",
+  "python": "Does answering this question need a calculation, such as an average growth rate, doubling time, ratio or weighted average?"
+ },
+ "scores": [
+  {
+   "set": "benchmark",
+   "id": "wb_ken_gdppc",
+   "data": 0.312,
+   "counties": 0.0,
+   "papers": 0.064,
+   "literature": 0.0,
+   "evaluations": 0.067,
+   "python": 0.074
+  },
+  {
+   "set": "benchmark",
+   "id": "wb_ind_gdppc_ppp",
+   "data": 0.275,
+   "counties": 0.0,
+   "papers": 0.084,
+   "literature": 0.003,
+   "evaluations": 0.08,
+   "python": 0.1
+  },
+  {
+   "set": "benchmark",
+   "id": "wb_nga_lifeexp",
+   "data": 0.168,
+   "counties": 0.0,
+   "papers": 0.0,
+   "literature": 0.036,
+   "evaluations": 0.009,
+   "python": 0.069
+  },
+  {
+   "set": "benchmark",
+   "id": "wb_bgd_u5mr",
+   "data": 0.107,
+   "counties": 0.0,
+   "papers": 0.068,
+   "literature": 0.027,
+   "evaluations": 0.078,
+   "python": 0.053
+  },
+  {
+   "set": "benchmark",
+   "id": "wb_bra_gini",
+   "data": 0.323,
+   "counties": 0.0,
+   "papers": 0.189,
+   "literature": 0.05,
+   "evaluations": 0.12,
+   "python": 0.199
+  },
+  {
+   "set": "benchmark",
+   "id": "wb_ssa_elec",
+   "data": 0.249,
+   "counties": 0.0,
+   "papers": 0.084,
+   "literature": 0.052,
+   "evaluations": 0.009,
+   "python": 0.058
+  },
+  {
+   "set": "benchmark",
+   "id": "wb_pak_primary",
+   "data": 0.108,
+   "counties": 0.0,
+   "papers": 0.003,
+   "literature": 0.052,
+   "evaluations": 0.109,
+   "python": 0.062
+  },
+  {
+   "set": "benchmark",
+   "id": "wb_npl_remit",
+   "data": 0.153,
+   "counties": 0.0,
+   "papers": 0.184,
+   "literature": 0.081,
+   "evaluations": 0.234,
+   "python": 0.139
+  },
+  {
+   "set": "benchmark",
+   "id": "wb_arg_infl",
+   "data": 0.178,
+   "counties": 0.0,
+   "papers": 0.071,
+   "literature": 0.033,
+   "evaluations": 0.001,
+   "python": 0.203
+  },
+  {
+   "set": "benchmark",
+   "id": "wb_vnm_growth",
+   "data": 0.137,
+   "counties": 0.0,
+   "papers": 0.182,
+   "literature": 0.087,
+   "evaluations": 0.106,
+   "python": 0.235
+  },
+  {
+   "set": "benchmark",
+   "id": "wb_uga_agri_emp",
+   "data": 0.191,
+   "counties": 0.0,
+   "papers": 0.128,
+   "literature": 0.071,
+   "evaluations": 0.104,
+   "python": 0.088
+  },
+  {
+   "set": "benchmark",
+   "id": "wb_ner_fertility",
+   "data": 0.082,
+   "counties": 0.0,
+   "papers": 0.041,
+   "literature": 0.054,
+   "evaluations": 0.035,
+   "python": 0.16
+  },
+  {
+   "set": "benchmark",
+   "id": "wb_eth_poverty",
+   "data": 0.435,
+   "counties": 0.0,
+   "papers": 0.234,
+   "literature": 0.083,
+   "evaluations": 0.0,
+   "python": 0.114
+  },
+  {
+   "set": "benchmark",
+   "id": "wb_nga_pop",
+   "data": 0.163,
+   "counties": 0.0,
+   "papers": 0.0,
+   "literature": 0.041,
+   "evaluations": 0.0,
+   "python": 0.061
+  },
+  {
+   "set": "benchmark",
+   "id": "atlas_fulton",
+   "data": 0.158,
+   "counties": 0.282,
+   "papers": 0.158,
+   "literature": 0.078,
+   "evaluations": 0.221,
+   "python": 0.113
+  },
+  {
+   "set": "benchmark",
+   "id": "atlas_utah_top",
+   "data": 0.124,
+   "counties": 0.757,
+   "papers": 0.066,
+   "literature": 0.071,
+   "evaluations": 0.159,
+   "python": 0.042
+  },
+  {
+   "set": "benchmark",
+   "id": "atlas_math_corr",
+   "data": 0.098,
+   "counties": 0.327,
+   "papers": 0.002,
+   "literature": 0.05,
+   "evaluations": 0.235,
+   "python": 0.038
+  },
+  {
+   "set": "benchmark",
+   "id": "fred_unrate_covid",
+   "data": 0.164,
+   "counties": 0.0,
+   "papers": 0.072,
+   "literature": 0.035,
+   "evaluations": 0.047,
+   "python": 0.028
+  },
+  {
+   "set": "benchmark",
+   "id": "fred_emratio",
+   "data": 0.268,
+   "counties": 0.0,
+   "papers": 0.063,
+   "literature": 0.035,
+   "evaluations": 0.004,
+   "python": 0.158
+  },
+  {
+   "set": "benchmark",
+   "id": "trap_us_employment",
+   "data": 0.747,
+   "counties": 0.0,
+   "papers": 0.047,
+   "literature": 0.015,
+   "evaluations": 0.069,
+   "python": 0.123
+  },
+  {
+   "set": "benchmark",
+   "id": "trap_us_inflation",
+   "data": 0.186,
+   "counties": 0.0,
+   "papers": 0.027,
+   "literature": 0.0,
+   "evaluations": 0.0,
+   "python": 0.131
+  },
+  {
+   "set": "benchmark",
+   "id": "trap_pp",
+   "data": 0.213,
+   "counties": 0.0,
+   "papers": 0.466,
+   "literature": 0.063,
+   "evaluations": 0.122,
+   "python": 0.133
+  },
+  {
+   "set": "benchmark",
+   "id": "trap_nga_poverty_today",
+   "data": 0.37,
+   "counties": 0.0,
+   "papers": 0.117,
+   "literature": 0.062,
+   "evaluations": 0.071,
+   "python": 0.166
+  },
+  {
+   "set": "benchmark",
+   "id": "trap_ind_ppp_vs_market",
+   "data": 0.812,
+   "counties": 0.0,
+   "papers": 0.153,
+   "literature": 0.027,
+   "evaluations": 0.21,
+   "python": 0.084
+  },
+  {
+   "set": "benchmark",
+   "id": "trap_cohort",
+   "data": 0.094,
+   "counties": 0.12,
+   "papers": 0.093,
+   "literature": 0.065,
+   "evaluations": 0.169,
+   "python": 0.084
+  },
+  {
+   "set": "benchmark",
+   "id": "trap_fake_paper",
+   "data": 0.099,
+   "counties": 0.0,
+   "papers": 0.443,
+   "literature": 0.254,
+   "evaluations": 0.103,
+   "python": 0.097
+  },
+  {
+   "set": "benchmark",
+   "id": "comp_chn_cagr",
+   "data": 0.267,
+   "counties": 0.0,
+   "papers": 0.187,
+   "literature": 0.027,
+   "evaluations": 0.025,
+   "python": 0.848
+  },
+  {
+   "set": "benchmark",
+   "id": "comp_eth_double",
+   "data": 0.132,
+   "counties": 0.0,
+   "papers": 0.09,
+   "literature": 0.0,
+   "evaluations": 0.186,
+   "python": 0.732
+  },
+  {
+   "set": "benchmark",
+   "id": "comp_bgd_ind_ratio",
+   "data": 0.25,
+   "counties": 0.0,
+   "papers": 0.079,
+   "literature": 0.027,
+   "evaluations": 0.165,
+   "python": 0.121
+  },
+  {
+   "set": "benchmark",
+   "id": "comp_weighted_lifeexp",
+   "data": 0.147,
+   "counties": 0.0,
+   "papers": 0.0,
+   "literature": 0.013,
+   "evaluations": 0.0,
+   "python": 0.049
+  },
+  {
+   "set": "benchmark",
+   "id": "peer_ken_u5mr",
+   "data": 0.157,
+   "counties": 0.0,
+   "papers": 0.081,
+   "literature": 0.063,
+   "evaluations": 0.016,
+   "python": 0.044
+  },
+  {
+   "set": "benchmark",
+   "id": "lit_microcredit",
+   "data": 0.086,
+   "counties": 0.043,
+   "papers": 0.256,
+   "literature": 0.157,
+   "evaluations": 0.683,
+   "python": 0.011
+  },
+  {
+   "set": "benchmark",
+   "id": "lit_deworming",
+   "data": 0.096,
+   "counties": 0.001,
+   "papers": 0.0,
+   "literature": 0.387,
+   "evaluations": 0.134,
+   "python": 0.036
+  },
+  {
+   "set": "benchmark",
+   "id": "lit_cash_inflation",
+   "data": 0.098,
+   "counties": 0.0,
+   "papers": 0.111,
+   "literature": 0.081,
+   "evaluations": 0.123,
+   "python": 0.073
+  },
+  {
+   "set": "benchmark",
+   "id": "lit_graduation",
+   "data": 0.048,
+   "counties": 0.027,
+   "papers": 0.033,
+   "literature": 0.028,
+   "evaluations": 0.617,
+   "python": 0.007
+  },
+  {
+   "set": "benchmark",
+   "id": "lit_poverty_line",
+   "data": 0.112,
+   "counties": 0.0,
+   "papers": 0.182,
+   "literature": 0.077,
+   "evaluations": 0.124,
+   "python": 0.041
+  },
+  {
+   "set": "benchmark",
+   "id": "lr_kor_gha",
+   "data": 0.328,
+   "counties": 0.0,
+   "papers": 0.12,
+   "literature": 0.055,
+   "evaluations": 0.039,
+   "python": 0.056
+  },
+  {
+   "set": "benchmark",
+   "id": "lr_chn_1950",
+   "data": 0.355,
+   "counties": 0.0,
+   "papers": 0.158,
+   "literature": 0.037,
+   "evaluations": 0.107,
+   "python": 0.492
+  },
+  {
+   "set": "benchmark",
+   "id": "lr_gbr_1820",
+   "data": 0.377,
+   "counties": 0.0,
+   "papers": 0.093,
+   "literature": 0.006,
+   "evaluations": 0.012,
+   "python": 0.118
+  },
+  {
+   "set": "benchmark",
+   "id": "lr_chn_ind_cross",
+   "data": 0.185,
+   "counties": 0.0,
+   "papers": 0.101,
+   "literature": 0.029,
+   "evaluations": 0.171,
+   "python": 0.126
+  },
+  {
+   "set": "benchmark",
+   "id": "credit_race_delinq",
+   "data": 0.131,
+   "counties": 0.08,
+   "papers": 0.04,
+   "literature": 0.03,
+   "evaluations": 0.048,
+   "python": 0.036
+  },
+  {
+   "set": "benchmark",
+   "id": "migration_100mi",
+   "data": 0.076,
+   "counties": 0.03,
+   "papers": 0.151,
+   "literature": 0.075,
+   "evaluations": 0.037,
+   "python": 0.089
+  },
+  {
+   "set": "benchmark",
+   "id": "abs_mobility",
+   "data": 0.11,
+   "counties": 0.663,
+   "papers": 0.119,
+   "literature": 0.037,
+   "evaluations": 0.118,
+   "python": 0.247
+  },
+  {
+   "set": "benchmark",
+   "id": "race_gap_shrink",
+   "data": 0.103,
+   "counties": 0.002,
+   "papers": 0.249,
+   "literature": 0.075,
+   "evaluations": 0.087,
+   "python": 0.052
+  },
+  {
+   "set": "benchmark",
+   "id": "unanswerable_minwage",
+   "data": 0.082,
+   "counties": 0.053,
+   "papers": 0.674,
+   "literature": 0.22,
+   "evaluations": 0.168,
+   "python": 0.059
+  },
+  {
+   "set": "held_out",
+   "id": "credit_race_delinq",
+   "data": 0.131,
+   "counties": 0.08,
+   "papers": 0.04,
+   "literature": 0.03,
+   "evaluations": 0.048,
+   "python": 0.036
+  },
+  {
+   "set": "held_out",
+   "id": "credit_class_delinq",
+   "data": 0.232,
+   "counties": 0.0,
+   "papers": 0.081,
+   "literature": 0.029,
+   "evaluations": 0.208,
+   "python": 0.124
+  },
+  {
+   "set": "held_out",
+   "id": "credit_income_wealth",
+   "data": 0.171,
+   "counties": 0.004,
+   "papers": 0.086,
+   "literature": 0.052,
+   "evaluations": 0.18,
+   "python": 0.046
+  },
+  {
+   "set": "held_out",
+   "id": "credit_hometown",
+   "data": 0.051,
+   "counties": 0.079,
+   "papers": 0.104,
+   "literature": 0.08,
+   "evaluations": 0.044,
+   "python": 0.046
+  },
+  {
+   "set": "held_out",
+   "id": "class_gap_growth",
+   "data": 0.099,
+   "counties": 0.088,
+   "papers": 0.18,
+   "literature": 0.061,
+   "evaluations": 0.119,
+   "python": 0.135
+  },
+  {
+   "set": "held_out",
+   "id": "race_gap_shrink",
+   "data": 0.103,
+   "counties": 0.002,
+   "papers": 0.249,
+   "literature": 0.075,
+   "evaluations": 0.087,
+   "python": 0.052
+  },
+  {
+   "set": "held_out",
+   "id": "changing_mechanism",
+   "data": 0.102,
+   "counties": 0.042,
+   "papers": 0.357,
+   "literature": 0.6,
+   "evaluations": 0.126,
+   "python": 0.069
+  },
+  {
+   "set": "held_out",
+   "id": "migration_100mi",
+   "data": 0.076,
+   "counties": 0.03,
+   "papers": 0.151,
+   "literature": 0.075,
+   "evaluations": 0.037,
+   "python": 0.089
+  },
+  {
+   "set": "held_out",
+   "id": "migration_500mi",
+   "data": 0.067,
+   "counties": 0.032,
+   "papers": 0.145,
+   "literature": 0.075,
+   "evaluations": 0.001,
+   "python": 0.119
+  },
+  {
+   "set": "held_out",
+   "id": "migration_groups",
+   "data": 0.074,
+   "counties": 0.078,
+   "papers": 0.084,
+   "literature": 0.122,
+   "evaluations": 0.095,
+   "python": 0.023
+  },
+  {
+   "set": "held_out",
+   "id": "abs_mobility",
+   "data": 0.11,
+   "counties": 0.663,
+   "papers": 0.119,
+   "literature": 0.037,
+   "evaluations": 0.118,
+   "python": 0.247
+  },
+  {
+   "set": "held_out",
+   "id": "abs_mobility_middle",
+   "data": 0.443,
+   "counties": 0.12,
+   "papers": 0.126,
+   "literature": 0.071,
+   "evaluations": 0.162,
+   "python": 0.051
+  },
+  {
+   "set": "held_out",
+   "id": "mobility_trends",
+   "data": 0.113,
+   "counties": 0.052,
+   "papers": 0.083,
+   "literature": 0.028,
+   "evaluations": 0.101,
+   "python": 0.065
+  },
+  {
+   "set": "held_out",
+   "id": "covid_wage_split",
+   "data": 0.174,
+   "counties": 0.029,
+   "papers": 0.184,
+   "literature": 0.105,
+   "evaluations": 0.248,
+   "python": 0.083
+  },
+  {
+   "set": "held_out",
+   "id": "microforecast",
+   "data": 0.018,
+   "counties": 0.0,
+   "papers": 0.1,
+   "literature": 0.585,
+   "evaluations": 0.171,
+   "python": 0.101
+  },
+  {
+   "set": "held_out",
+   "id": "forecasted_te",
+   "data": 0.115,
+   "counties": 0.03,
+   "papers": 0.118,
+   "literature": 0.058,
+   "evaluations": 0.15,
+   "python": 0.099
+  },
+  {
+   "set": "held_out",
+   "id": "veracierto_state",
+   "data": 0.233,
+   "counties": 0.0,
+   "papers": 0.08,
+   "literature": 0.091,
+   "evaluations": 0.16,
+   "python": 0.258
+  },
+  {
+   "set": "held_out",
+   "id": "sieve_lp",
+   "data": 0.064,
+   "counties": 0.004,
+   "papers": 0.11,
+   "literature": 0.738,
+   "evaluations": 0.087,
+   "python": 0.194
+  },
+  {
+   "set": "held_out",
+   "id": "unanswerable_minwage",
+   "data": 0.082,
+   "counties": 0.053,
+   "papers": 0.674,
+   "literature": 0.22,
+   "evaluations": 0.168,
+   "python": 0.059
+  },
+  {
+   "set": "held_out",
+   "id": "live_unemployment",
+   "data": 0.406,
+   "counties": 0.0,
+   "papers": 0.082,
+   "literature": 0.01,
+   "evaluations": 0.105,
+   "python": 0.089
+  },
+  {
+   "set": "held_out",
+   "id": "live_inflation",
+   "data": 0.253,
+   "counties": 0.0,
+   "papers": 0.067,
+   "literature": 0.002,
+   "evaluations": 0.088,
+   "python": 0.353
+  },
+  {
+   "set": "held_out",
+   "id": "live_fedfunds",
+   "data": 0.028,
+   "counties": 0.0,
+   "papers": 0.0,
+   "literature": 0.0,
+   "evaluations": 0.0,
+   "python": 0.074
+  },
+  {
+   "set": "held_out",
+   "id": "both_unemp_migration",
+   "data": 0.105,
+   "counties": 0.0,
+   "papers": 0.256,
+   "literature": 0.029,
+   "evaluations": 0.08,
+   "python": 0.118
+  },
+  {
+   "set": "held_out",
+   "id": "dev_microcredit",
+   "data": 0.192,
+   "counties": 0.072,
+   "papers": 0.137,
+   "literature": 0.091,
+   "evaluations": 0.626,
+   "python": 0.036
+  },
+  {
+   "set": "held_out",
+   "id": "dev_deworming_longrun",
+   "data": 0.003,
+   "counties": 0.065,
+   "papers": 0.064,
+   "literature": 0.093,
+   "evaluations": 0.626,
+   "python": 0.062
+  },
+  {
+   "set": "held_out",
+   "id": "dev_cash_multiplier",
+   "data": 0.454,
+   "counties": 0.001,
+   "papers": 0.143,
+   "literature": 0.1,
+   "evaluations": 0.53,
+   "python": 0.231
+  },
+  {
+   "set": "held_out",
+   "id": "dev_cash_prices",
+   "data": 0.128,
+   "counties": 0.07,
+   "papers": 0.185,
+   "literature": 0.082,
+   "evaluations": 0.141,
+   "python": 0.072
+  },
+  {
+   "set": "held_out",
+   "id": "dev_graduation",
+   "data": 0.085,
+   "counties": 0.089,
+   "papers": 0.447,
+   "literature": 0.088,
+   "evaluations": 0.68,
+   "python": 0.069
+  },
+  {
+   "set": "held_out",
+   "id": "dev_poverty_line",
+   "data": 0.114,
+   "counties": 0.0,
+   "papers": 0.197,
+   "literature": 0.054,
+   "evaluations": 0.166,
+   "python": 0.032
+  },
+  {
+   "set": "held_out",
+   "id": "dev_ubi",
+   "data": 0.115,
+   "counties": 0.0,
+   "papers": 0.115,
+   "literature": 0.0,
+   "evaluations": 0.552,
+   "python": 0.074
+  },
+  {
+   "set": "held_out",
+   "id": "dev_education",
+   "data": 0.114,
+   "counties": 0.071,
+   "papers": 0.042,
+   "literature": 0.034,
+   "evaluations": 0.459,
+   "python": 0.105
+  },
+  {
+   "set": "held_out",
+   "id": "dev_migration_gains",
+   "data": 0.129,
+   "counties": 0.0,
+   "papers": 0.182,
+   "literature": 0.083,
+   "evaluations": 0.229,
+   "python": 0.27
+  },
+  {
+   "set": "held_out",
+   "id": "dev_structural_change",
+   "data": 0.094,
+   "counties": 0.031,
+   "papers": 0.156,
+   "literature": 0.066,
+   "evaluations": 0.204,
+   "python": 0.042
+  },
+  {
+   "set": "held_out",
+   "id": "dev_institutions",
+   "data": 0.164,
+   "counties": 0.049,
+   "papers": 0.211,
+   "literature": 0.077,
+   "evaluations": 0.15,
+   "python": 0.049
+  }
+ ]
+}

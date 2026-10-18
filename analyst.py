@@ -157,6 +157,28 @@ TOOLS = [
           ["series"]),
 ]
 
+# The county tools are ~1,000 of the ~2,000 schema tokens re-sent with every request, and few
+# questions need them, so they're sent only when the question or the conversation kept for
+# follow-ups mentions counties or mobility (answers using them cite "(Opportunity Atlas)").
+# Laya was measured for this (eval/tool_filter_eval.py) and dropped needed tools. If the model
+# calls one anyway (a city with no "county"), Groq rejects the request and run() resends it
+# with every tool.
+COUNTY_TOOLS = {"county_profile", "rank_counties", "correlate_counties"}
+COUNTY_WORDS = re.compile(r"\bcount(y|ies)\b|\bparish(es)?\b|\bboroughs?\b|opportunity atlas|"
+                          r"\bmobility\b|incarcerat", re.I)
+TOOLS_WITHOUT_COUNTIES = [t for t in TOOLS if t["function"]["name"] not in COUNTY_TOOLS]
+
+
+def tools_for(question: str, history: list[dict]) -> list[dict]:
+    texts = [question] + [m["content"] for m in history]
+    return TOOLS if any(COUNTY_WORDS.search(t or "") for t in texts) else TOOLS_WITHOUT_COUNTIES
+
+
+def _called_missing_tool(e: GroqUnavailable) -> bool:
+    """Groq's 400 for a call to a tool the request didn't include."""
+    text = str(e)
+    return text.startswith("HTTP 400") and ("request.tools" in text or any(n in text for n in COUNTY_TOOLS))
+
 
 def _summary(name: str, result: dict) -> str:
     """One line per tool call, so the user sees what the model looked up."""
@@ -532,17 +554,26 @@ class Analyst:
                     *self.history, {"role": "user", "content": question}]
         revised = False
         trail: list[dict] = []  # tool calls with one-line summaries, for last_result
+        tools = tools_for(question, self.history)
         for round_ in range(MAX_ROUNDS):
             payload = {"messages": messages, "temperature": 0.2, "max_tokens": 4096,
                        # medium, not low: choosing tools well takes more thought
                        # than answering from a fixed context does
                        "reasoning_effort": "medium"}
             if round_ < MAX_ROUNDS - 1:
-                payload["tools"] = TOOLS
+                payload["tools"] = tools
             else:  # last round: no tools at all (gpt-oss ignored tool_choice "none" in testing)
                 messages.append({"role": "user", "content": "Tool budget used up: answer now from the "
                                  "tool results above, and say what you couldn't find."})
-            response = self._post(payload)
+            self._tools_chars = len(json.dumps(payload.get("tools", [])))
+            try:
+                response = self._post(payload)
+            except GroqUnavailable as e:
+                if tools is TOOLS or "tools" not in payload or not _called_missing_tool(e):
+                    raise
+                tools = payload["tools"] = TOOLS
+                self._tools_chars = len(json.dumps(TOOLS))
+                response = self._post(payload)
             msg = response["choices"][0]["message"]
             calls = msg.get("tool_calls") or []
             if not calls:

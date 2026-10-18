@@ -498,6 +498,38 @@ def test_analyst_trims_requests_to_fit():
     assert size <= analyst.REQUEST_TOKEN_LIMIT
 
 
+def test_analyst_sends_county_tools_only_when_counties_come_up():
+    def names(sent):
+        return {t["function"]["name"] for t in sent[0]["tools"]}
+    bot = _bot()
+    _, sent = _with_fake([{"content": "Kenya: no data."}], lambda: bot.run("What is Kenya's GDP?"))
+    assert not names(sent) & analyst.COUNTY_TOOLS and "get_data" in names(sent)
+    _, sent = _with_fake([{"content": "Cook: no data."}], lambda: bot.run("Upward mobility in Cook County?"))
+    assert analyst.COUNTY_TOOLS <= names(sent)
+    # a follow-up that doesn't say "county" keeps them while that turn is in the remembered history
+    _, sent = _with_fake([{"content": "No data."}], lambda: bot.run("And for Black children there?"))
+    assert analyst.COUNTY_TOOLS <= names(sent)
+    bot.history = []
+    _, sent = _with_fake([{"content": "No data."}], lambda: bot.run("And for Black children there?"))
+    assert not names(sent) & analyst.COUNTY_TOOLS
+
+
+def test_analyst_resends_all_tools_when_model_calls_a_county_tool_anyway():
+    rejected = analyst.GroqUnavailable("HTTP 400: tool call validation failed: attempted to call tool "
+                                       "'county_profile' which was not in request.tools")
+    script = [rejected, _tool_call("county_profile", {"county": "Cook", "state": "IL"}),
+              {"content": "Chicago (Cook County) has no number here."}]
+    (answer, _), sent = _with_fake(script, lambda: _bot().run("Is Chicago good for poor kids?"))
+    assert len(sent[0]["tools"]) < len(analyst.TOOLS) == len(sent[1]["tools"]) == len(sent[2]["tools"])
+    assert answer.startswith("Chicago")
+    # any other 400 still goes to the offline fallback as before
+    try:
+        _with_fake([analyst.GroqUnavailable("HTTP 400: bad JSON")], lambda: _bot().run("Kenya GDP?"))
+        raise AssertionError("should have raised")
+    except analyst.GroqUnavailable:
+        pass
+
+
 def test_tool_schemas_stay_small():
     # re-sent with every request against Groq's free 8K tokens/minute limit
     assert len(json.dumps(analyst.TOOLS)) / analyst.CHARS_PER_TOKEN < 2000
